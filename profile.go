@@ -29,8 +29,10 @@ func (name profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sec = 30
 	}
 	stateMu.Lock()
-	snapshot := make([]*Machine, len(machines), len(machines))
-	copy(snapshot, machines)
+	snapshot := make([]*Machine, 0, len(machines))
+	for _, machine := range machines {
+		snapshot = append(snapshot, machine)
+	}
 	stateMu.Unlock()
 	g, ctx := errgroup.WithContext(r.Context())
 	var mu sync.Mutex

@@ -38,7 +38,7 @@ var (
 
 	stateMu  sync.Mutex
 	services = make(map[string]*Service)
-	machines []*Machine
+	machines = map[string]*Machine{}
 	driver   bool
 	running  bool
 )
@@ -101,10 +101,18 @@ func Server() *rpc.Server {
 // The returned machine is not owned: it is not kept alive as Start
 // does.
 func Dial(ctx context.Context, addr string) (*Machine, error) {
-	m := &Machine{Addr: addr, owner: false}
-	m.start()
+	// TODO(marius): normalize addrs?
+	// TODO(marius): collect machines from 'machines' as they become
+	// unavailable and should be redialed. We should also embed some sort
+	// of cookie/capability into the address so we can distinguish between
+	// different instances of a machine on the same address.
 	stateMu.Lock()
-	machines = append(machines, m)
+	m := machines[addr]
+	if m == nil {
+		m = &Machine{Addr: addr, owner: false}
+		machines[addr] = m
+		m.start()
+	}
 	stateMu.Unlock()
 	return m, nil
 }
@@ -121,7 +129,7 @@ func Start(ctx context.Context) (*Machine, error) {
 	m.owner = true
 	m.start()
 	stateMu.Lock()
-	machines = append(machines, m)
+	machines[m.Addr] = m
 	stateMu.Unlock()
 	return m, nil
 }
