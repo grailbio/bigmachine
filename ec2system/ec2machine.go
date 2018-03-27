@@ -519,6 +519,11 @@ func (s *System) Exit(code int) {
 // for future invocations.
 func (s *System) Shutdown() {}
 
+// Maxprocs returns the number of VCPUs in the system's configuration.
+func (s *System) Maxprocs() int {
+	return int(s.config.VCPU)
+}
+
 type args map[string]interface{}
 
 // tmpl renders the template text, after first stripping common

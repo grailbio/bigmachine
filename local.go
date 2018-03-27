@@ -81,6 +81,10 @@ func (localSystem) Exit(code int) {
 
 func (localSystem) Shutdown() {}
 
+func (localSystem) Maxprocs() int {
+	return 1
+}
+
 func getFreeTCPPort() (int, error) {
 	addr, err := net.ResolveTCPAddr("tcp", ":0")
 	if err != nil {

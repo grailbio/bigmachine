@@ -101,3 +101,8 @@ func (s *System) Start(context.Context) (*bigmachine.Machine, error) {
 func (s *System) Exit(int) {
 	s.exited = true
 }
+
+// Maxprocs returns 1.
+func (s *System) Maxprocs() int {
+	return 1
+}

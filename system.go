@@ -40,4 +40,7 @@ type System interface {
 	// Shutdown is called on graceful driver exit. It's should be used to
 	// perform system tear down. It is not guaranteed to be called.
 	Shutdown()
+	// Maxprocs returns the maximum number of processors per machine,
+	// as configured. Returns 0 if is a dynamic value.
+	Maxprocs() int
 }
