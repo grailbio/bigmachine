@@ -54,6 +54,10 @@ const (
 	port                 = 2000
 	maxConcurrentStreams = 2000
 	authorityPath        = "/tmp/bigmachine.pem"
+
+	// 214GiB is the smallest gp2 disk size that attains maximum
+	// possible gp2 throughput.
+	dataVolumeSliceSize = 214
 )
 
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
@@ -97,6 +101,11 @@ type System struct {
 	// Diskspace is the amount of disk space in GiB allocated
 	// to the instance's root EBS volume. Its default is 200.
 	Diskspace uint
+
+	// Dataspace is the amount of data disk space allocated
+	// in /mnt/data. It defaults to 0. Data are striped across
+	// multiple gp2 EBS slices in order to improve throughput.
+	Dataspace uint
 
 	// Binary is the URL to a bootstrap binary to be used when launching
 	// system instances. It should be a minimal bigmachine build that
@@ -213,6 +222,21 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			},
 		},
 	}
+	nslice := s.numDataSlices()
+	for i := 0; i < nslice; i++ {
+		blockDevices = append(blockDevices, &ec2.BlockDeviceMapping{
+			// Device names are ignored for NVMe devices; they may be
+			// remapped into any NVMe name. Luckily, our devices are
+			// all of uniform size, and so we just need to know how many
+			// we have.
+			DeviceName: aws.String(fmt.Sprintf("/dev/xvd%c", 'b'+i)),
+			Ebs: &ec2.EbsBlockDevice{
+				DeleteOnTermination: aws.Bool(true),
+				VolumeSize:          aws.Int64(dataVolumeSliceSize),
+				VolumeType:          aws.String("gp2"),
+			},
+		})
+	}
 	// TODO(marius): should we use AvailabilityZoneGroup to ensure that
 	// all instances land in the same AZ?
 	params := &ec2.RequestSpotInstancesInput{
@@ -307,6 +331,10 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 	return m, nil
 }
 
+func (s *System) numDataSlices() int {
+	return int((s.Dataspace + dataVolumeSliceSize - 1) / dataVolumeSliceSize)
+}
+
 // CloudConfig returns the cloudConfig instance as configured by the current system.
 func (s *System) cloudConfig() *cloudConfig {
 	c := new(cloudConfig)
@@ -318,6 +346,70 @@ func (s *System) cloudConfig() *cloudConfig {
 	c.CoreOS.Update.RebootStrategy = "off"
 	c.AppendUnit(cloudUnit{Name: "update-engine.service", Command: "stop"})
 	c.AppendUnit(cloudUnit{Name: "locksmithd.service", Command: "stop"})
+	var dataDeviceName string
+	switch nslice := s.numDataSlices(); nslice {
+	case 0:
+	case 1:
+		// No need to set up striping in this case.
+		dataDeviceName = "xvdb"
+		if s.config.NVMe {
+			dataDeviceName = "nvme1n1"
+		}
+		c.AppendUnit(cloudUnit{
+			Name:    fmt.Sprintf("format-%s.service", dataDeviceName),
+			Command: "start",
+			Content: tmpl(`
+			[Unit]
+			Description=Format /dev/{{.name}}
+			After=dev-{{.name}}.device
+			Requires=dev-{{.name}}.device
+			[Service]
+			Type=oneshot
+			RemainAfterExit=yes
+			ExecStart=/usr/sbin/wipefs -f /dev/{{.name}}
+			ExecStart=/usr/sbin/mkfs.ext4 -F /dev/{{.name}}
+		`, args{"name": dataDeviceName}),
+		})
+	default:
+		dataDeviceName = "md0"
+		devices := make([]string, nslice)
+		// Remap names for NVMe instances.
+		for idx := range devices {
+			if s.config.NVMe {
+				devices[idx] = fmt.Sprintf("nvme%dn1", idx+1)
+			} else {
+				devices[idx] = fmt.Sprintf("xvd%c", 'b'+idx)
+			}
+		}
+		c.AppendUnit(cloudUnit{
+			Name:    fmt.Sprintf("format-%s.service", dataDeviceName),
+			Command: "start",
+			Content: tmpl(`
+			[Unit]
+			Description=Format /dev/{{.md}}
+			After={{range $_, $name :=  .devices}}dev-{{$name}}.device {{end}}
+			Requires={{range $_, $name := .devices}}dev-{{$name}}.device {{end}}
+			[Service]
+			Type=oneshot
+			RemainAfterExit=yes
+			ExecStart=/usr/sbin/mdadm --create --run --verbose /dev/{{.md}} --level=0 --chunk=256 --name=bigmachine --raid-devices={{.devices|len}} {{range $_, $name := .devices}}/dev/{{$name}} {{end}}
+			ExecStart=/usr/sbin/mkfs.ext4 -F /dev/{{.md}}
+		`, args{"devices": devices, "md": dataDeviceName}),
+		})
+	}
+	if dataDeviceName != "" {
+		c.AppendUnit(cloudUnit{
+			Name:    "mnt-data.mount",
+			Command: "start",
+			Content: tmpl(`
+			[Mount]
+			What=/dev/{{.name}}
+			Where=/mnt/data
+			Type=ext4
+			Options=data=writeback
+		`, args{"name": dataDeviceName}),
+		})
+	}
 	// Write the bootstrapping script. It fetches the binary and runs it.
 	c.AppendFile(cloudFile{
 		Permissions: "0755",
@@ -344,6 +436,12 @@ func (s *System) cloudConfig() *cloudConfig {
 	// previously. By default, the machine is shut down when the
 	// bootmachine program terminates for any reason. This is the
 	// mechanism of (automatic) instance termination.
+	//
+	// If we have a data disk, set TMPDIR to it.
+	var environ string
+	if dataDeviceName != "" {
+		environ = "Environment=TMPDIR=/mnt/data"
+	}
 	c.AppendUnit(cloudUnit{
 		Name:    "bootmachine.service",
 		Enable:  true,
@@ -359,8 +457,9 @@ func (s *System) cloudConfig() *cloudConfig {
 			{{end}}
 			[Service]
 			Type=oneshot
+			{{.environ}}
 			ExecStart=/opt/bin/bootmachine
-		`, args{"mortal": !*immortal}),
+		`, args{"mortal": !*immortal, "environ": environ}),
 	})
 	return c
 }
