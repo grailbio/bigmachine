@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -204,9 +205,9 @@ func (m *Machine) loop() {
 		}
 	}
 
-	// If we're the owner, we'll redirect the machine's standard output
+	// If we're the owner, we'll duplicate the machine's standard output
 	// and error to our own, and also maintain a keepalive.
-	for _, fd := range []int{1, 2} {
+	for _, fd := range []int{syscall.Stdout, syscall.Stderr} {
 		go func(fd int) {
 			if err := m.tail(ctx, fd); err != nil {
 				log.Printf("tail %s %d: %v; no longer receiving logs from machine", m.Addr, fd, err)

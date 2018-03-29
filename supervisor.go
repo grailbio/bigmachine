@@ -23,6 +23,8 @@ import (
 	"github.com/grailbio/bigmachine/rpc"
 )
 
+const maxTeeBuffer = 1 << 20
+
 var (
 	digester     = digest.Digester(crypto.SHA256)
 	binaryDigest digest.Digest
@@ -43,7 +45,9 @@ func binary() (io.ReadCloser, error) {
 
 // Supervisor is the system service installed on every machine.
 type Supervisor struct {
-	nextc chan time.Time
+	nextc                chan time.Time
+	saveFds              map[int]int
+	stdoutTee, stderrTee *tee
 }
 
 // Info contains system information about a machine.
@@ -62,6 +66,17 @@ type Info struct {
 func (s *Supervisor) Init(_ *Service) error {
 	if Driver() {
 		return nil
+	}
+	s.saveFds = make(map[int]int)
+	// Capture output stdout and stderr.
+	var err error
+	s.stderrTee, err = s.teeFd(syscall.Stderr, "/dev/stderr")
+	if err != nil {
+		log.Printf("failed to tee stderr: %v", err)
+	}
+	s.stdoutTee, err = s.teeFd(syscall.Stdout, "/dev/stdout")
+	if err != nil {
+		log.Printf("failed to tee stdout: %v", err)
 	}
 	s.nextc = make(chan time.Time)
 	go s.watchdog()
@@ -96,6 +111,16 @@ func (s *Supervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) erro
 		return err
 	}
 	log.Printf("exec %s %s", path, strings.Join(os.Args, " "))
+	// Restore original fds so that that they can be re-duped again
+	// by our replacement.
+	for orig, save := range s.saveFds {
+		if err := syscall.Dup2(save, orig); err != nil {
+			log.Printf("dup2 %d %d: %v", save, orig, err)
+		}
+		if err := syscall.Close(save); err != nil {
+			log.Printf("close %d: %v", save, err)
+		}
+	}
 	return syscall.Exec(path, os.Args, os.Environ())
 }
 
@@ -103,13 +128,18 @@ func (s *Supervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) erro
 // file descriptor is copied. This can be used to write standard
 // output and error to the console of another machine.
 func (s *Supervisor) Tail(ctx context.Context, fd int, rc *io.ReadCloser) error {
-	r, w, err := os.Pipe()
-	if err != nil {
-		return err
+	var tee *tee
+	switch fd {
+	case syscall.Stdout:
+		tee = s.stdoutTee
+	case syscall.Stderr:
+		tee = s.stderrTee
 	}
-	if err := syscall.Dup2(int(w.Fd()), fd); err != nil {
-		return err
+	if tee == nil {
+		return fmt.Errorf("cannot tail fd %d", fd)
 	}
+	r, w := io.Pipe()
+	tee.Tee(w)
 	*rc = rpc.Flush(r)
 	return nil
 }
@@ -221,6 +251,32 @@ func (s *Supervisor) watchdog() {
 	}
 }
 
+// TeeFd redirects the fd to a tee that is returned. The original fd
+// is added to the tee. Not thread safe: should only be called during
+// initialization.
+func (s *Supervisor) teeFd(fd int, name string) (*tee, error) {
+	savefd, err := syscall.Dup(fd)
+	if err != nil {
+		return nil, err
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Dup2(int(w.Fd()), fd); err != nil {
+		return nil, err
+	}
+	s.saveFds[fd] = savefd
+	tee := newTee(maxTeeBuffer)
+	tee.Tee(os.NewFile(uintptr(savefd), name))
+	go func() {
+		_, err := io.Copy(tee, r)
+		if err != nil {
+			log.Printf("tee %d %s: %v", fd, name, err)
+		}
+	}()
+	return tee, nil
+}
 func isContextAliveFor(ctx context.Context, dur time.Duration) bool {
 	deadline, ok := ctx.Deadline()
 	if !ok {

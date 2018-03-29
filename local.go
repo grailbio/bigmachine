@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -35,10 +36,21 @@ func (localSystem) Start(ctx context.Context) (*Machine, error) {
 		return nil, err
 	}
 	cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=:%d", port))
+
 	m := new(Machine)
 	m.Addr = fmt.Sprintf("http://localhost:%d/", port)
 	m.Maxprocs = 1
-	return m, cmd.Start()
+	err = cmd.Start()
+	if err == nil {
+		go func() {
+			if err := cmd.Wait(); err != nil {
+				log.Printf("machine %s terminated with error: %v", m.Addr, err)
+			} else {
+				log.Printf("machine %s terminated", m.Addr)
+			}
+		}()
+	}
+	return m, err
 }
 
 func (localSystem) Main() error {
