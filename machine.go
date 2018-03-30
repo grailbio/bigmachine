@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -19,7 +20,11 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/grailbio/bigmachine/rpc"
 )
+
+var traceFlag = flag.Bool("bigm.trace", false, "trace bigmachine RPCs")
 
 // TODO(marius): We could define a Gob decoder for machines that
 // encode its address and dial it on decode. On the other hand, it's
@@ -72,6 +77,16 @@ type stateWaiter struct {
 	state State
 }
 
+type canceler interface {
+	Cancel()
+}
+
+type cancelFunc struct{ cancel func() }
+
+func (f *cancelFunc) Cancel() {
+	f.cancel()
+}
+
 // A Machine is a single machine managed by bigmachine. Each machine
 // is a "one-shot" execution of a bigmachine binary.  Machines embody
 // a failure detection mechanism, but does not provide fault
@@ -91,10 +106,15 @@ type Machine struct {
 
 	owner bool
 
-	mu      sync.Mutex
-	state   int64
-	err     error
-	waiters []stateWaiter
+	supervisor *Service
+	client     *rpc.Client
+	cancel     func()
+
+	mu        sync.Mutex
+	state     int64
+	err       error
+	waiters   []stateWaiter
+	cancelers map[canceler]struct{}
 }
 
 // State returns the machine's current state.
@@ -126,6 +146,13 @@ func (m *Machine) Err() error {
 }
 
 func (m *Machine) start() {
+	if m.supervisor == nil {
+		m.supervisor = supervisor
+	}
+	if m.client == nil {
+		m.client = client
+	}
+	m.cancelers = make(map[canceler]struct{})
 	go m.loop()
 }
 
@@ -154,6 +181,12 @@ func (m *Machine) setState(s State) {
 		}
 	}
 	atomic.StoreInt64(&m.state, int64(s))
+	if s >= Stopped {
+		for c := range m.cancelers {
+			c.Cancel()
+		}
+		m.cancelers = make(map[canceler]struct{})
+	}
 	m.mu.Unlock()
 	for _, c := range triggered {
 		close(c)
@@ -163,6 +196,8 @@ func (m *Machine) setState(s State) {
 func (m *Machine) loop() {
 	m.setState(Starting)
 	ctx := context.Background()
+	ctx, m.cancel = context.WithCancel(ctx)
+	defer m.cancel()
 	if m.owner {
 		// If we're the owner, loop is called after the machine was started
 		// by the underlying system. We first wait for the machine to come
@@ -173,13 +208,15 @@ func (m *Machine) loop() {
 		}
 		// Give us some extra time now. This keepalive will die anyway
 		// after we exec.
-		if err := m.call(ctx, supervisor, "Keepalive", 10*time.Minute, nil); err != nil {
+		keepaliveCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		if err := m.call(keepaliveCtx, m.supervisor, "Keepalive", 10*time.Minute, nil); err != nil {
 			log.Printf("Keepalive %v: %v", m.Addr, err)
 		}
+		cancel()
 		// Exec the current binary onto the machine. This will make the
 		// machine unresponsive, because it will not have a chance to reply
 		// to the exec call. We give it some time to recover.
-		err := m.exec()
+		err := m.exec(ctx)
 		// TODO(marius): this is an unfortunate hack. It would be nice to
 		// have a better way of doing this.
 		if err != nil && !strings.Contains(err.Error(), "EOF") {
@@ -218,7 +255,7 @@ func (m *Machine) loop() {
 	for {
 		retryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		var next time.Duration
-		err := m.retryCall(retryCtx, newBackoffRetrier(time.Second, 1), supervisor, "Keepalive", keepalive, &next)
+		err := m.retryCall(retryCtx, newBackoffRetrier(time.Second, 1), m.supervisor, "Keepalive", keepalive, &next)
 		cancel()
 		if err != nil {
 			m.errorf("keepalive failed: %v", err)
@@ -238,7 +275,7 @@ func (m *Machine) loop() {
 
 func (m *Machine) tail(ctx context.Context, fd int) error {
 	var rc io.ReadCloser
-	if err := m.call(ctx, supervisor, "Tail", fd, &rc); err != nil {
+	if err := m.call(ctx, m.supervisor, "Tail", fd, &rc); err != nil {
 		return err
 	}
 	defer rc.Close()
@@ -254,14 +291,36 @@ func (m *Machine) tail(ctx context.Context, fd int) error {
 func (m *Machine) ping(ctx context.Context, maxtime time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxtime)
 	defer cancel()
-	return m.retryCall(ctx, newBackoffRetrier(time.Second, 1), supervisor, "Ping", 0, nil)
+	return m.retryCall(ctx, newBackoffRetrier(time.Second, 1), m.supervisor, "Ping", 0, nil)
 }
 
-func (m *Machine) exec() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+// Context returns a new derived context that is canceled whenever
+// the machine has stopped. This can be used to tie context lifetimes
+// to machine lifetimes. The returned cancellation function should be
+// called when the context is discarded.
+func (m *Machine) context(ctx context.Context) (mctx context.Context, cancel func()) {
+	ctx, ctxcancel := context.WithCancel(ctx)
+	m.mu.Lock()
+	if State(m.state) >= Stopped {
+		m.mu.Unlock()
+		ctxcancel()
+		return ctx, func() {}
+	}
+	c := &cancelFunc{ctxcancel}
+	m.cancelers[c] = struct{}{}
+	m.mu.Unlock()
+	return ctx, func() {
+		m.mu.Lock()
+		delete(m.cancelers, c)
+		m.mu.Unlock()
+	}
+}
+
+func (m *Machine) exec(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	var info Info
-	if err := m.call(ctx, supervisor, "Info", struct{}{}, &info); err != nil {
+	if err := m.call(ctx, m.supervisor, "Info", struct{}{}, &info); err != nil {
 		return err
 	}
 	if info.Goos != runtime.GOOS || info.Goarch != runtime.GOARCH {
@@ -269,7 +328,7 @@ func (m *Machine) exec() error {
 			info.Goarch, info.Goos, runtime.GOARCH, runtime.GOOS)
 	}
 	// First set the correct arguments.
-	if err := m.call(ctx, supervisor, "Setargs", os.Args, nil); err != nil {
+	if err := m.call(ctx, m.supervisor, "Setargs", os.Args, nil); err != nil {
 		return err
 	}
 	rc, err := binary()
@@ -277,16 +336,25 @@ func (m *Machine) exec() error {
 		return err
 	}
 	defer rc.Close()
-	return m.call(ctx, supervisor, "Exec", rc, nil)
+	return m.call(ctx, m.supervisor, "Exec", rc, nil)
 }
 
 func (m *Machine) call(ctx context.Context, svc *Service, method string, arg, reply interface{}) error {
-	return client.Call(ctx, m.Addr, svc.name+"."+method, arg, reply)
+	if *traceFlag {
+		var deadline string
+		if d, ok := ctx.Deadline(); ok {
+			deadline = fmt.Sprintf(" [deadline:%s]", time.Until(d))
+		}
+		log.Printf("%s%s.%s(%v)%s", m.Addr, svc.Name(), method, arg, deadline)
+	}
+	return m.client.Call(ctx, m.Addr, svc.name+"."+method, arg, reply)
 }
 
 func (m *Machine) retryCall(ctx context.Context, retrier retrier, svc *Service, method string, arg, reply interface{}) error {
 	for retrier.Next(ctx) {
 		if err := m.call(ctx, svc, method, arg, reply); err != nil {
+			// TODO(marius): this isn't quite right. Introduce an errors package
+			// similar to Reflow's here to categorize errors properly.
 			if _, ok := err.(net.Error); !ok {
 				log.Printf("%s%s.%s(%v): %v", m.Addr, svc.Name(), method, arg, err)
 			}
@@ -302,11 +370,16 @@ func (m *Machine) retryCall(ctx context.Context, retrier retrier, svc *Service, 
 // RPC mechanism (see package docs or the docs of the rpc package).
 // Call waits to invoke the method until the machine is in running
 // state, and fails fast when it is stopped.
+//
+// If a machine fails its keepalive, pending calls are canceled.
 func (m *Machine) Call(ctx context.Context, svc *Service, method string, arg, reply interface{}) error {
 	for {
 		switch state := m.State(); state {
 		case Running:
-			return m.call(ctx, svc, method, arg, reply)
+			ctx, cancel := m.context(ctx)
+			err := m.call(ctx, svc, method, arg, reply)
+			cancel()
+			return err
 		case Stopped:
 			if err := m.Err(); err != nil {
 				return err
