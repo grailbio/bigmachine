@@ -27,7 +27,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -45,6 +44,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/ec2system/instances"
 	"golang.org/x/net/http2"
@@ -150,7 +150,7 @@ func (s *System) Init() error {
 		// them, e.g., if we have a Go package and a command like
 		// "bigmachine run package...".) On the other hand, it's very nice
 		// to have a single, static binary for this.
-		return errors.New("ec2machine is currently supported only on linux/amd64")
+		return errors.E(errors.Precondition, "ec2machine is currently supported only on linux/amd64")
 	}
 	if s.InstanceType == "" {
 		s.InstanceType = "m3.medium"
@@ -485,7 +485,7 @@ func (s *System) HTTPClient() *http.Client {
 func (s *System) Main() error {
 	addr := os.Getenv("BIGMACHINE_ADDR")
 	if addr == "" {
-		return errors.New("no address defined")
+		return errors.E(errors.Invalid, "no address defined")
 	}
 	_, config, err := s.authority.HTTPSConfig()
 	if err != nil {

@@ -55,6 +55,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+
+	"github.com/grailbio/base/errors"
 )
 
 // MethodErrorCode is the HTTP error used for method errors.
@@ -251,8 +253,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	replyIface := replyv.Interface()
 	if err != nil {
 		code = methodErrorCode
-		// TODO: structured errors ala Reflow
-		replyIface = err.Error()
+		replyIface = errors.Recover(err)
 	}
 	if readcloser != nil {
 		defer readcloser.Close()

@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/grailbio/base/errors"
 	"golang.org/x/net/context/ctxhttp"
 )
 
@@ -74,20 +74,24 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		b := new(bytes.Buffer)
 		enc := gob.NewEncoder(b)
 		if err := enc.Encode(arg); err != nil {
-			return err
+			return errors.E(errors.Invalid, err)
 		}
 		body = b
 		contentType = gobContentType
 	}
 	resp, err := ctxhttp.Post(ctx, c.client, url, contentType, body)
-	if err != nil {
+	switch err {
+	case nil:
+	case context.DeadlineExceeded, context.Canceled:
 		return err
+	default:
+		return errors.E(errors.Net, err)
 	}
 	switch arg := reply.(type) {
 	case *io.ReadCloser:
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
-			return fmt.Errorf("bad reply status %s", resp.Status)
+			return errors.E(errors.Invalid, fmt.Sprintf("bad reply status %s", resp.Status))
 		}
 		*arg = resp.Body
 		return nil
@@ -96,15 +100,15 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		dec := gob.NewDecoder(resp.Body)
 		switch resp.StatusCode {
 		case methodErrorCode:
-			var message string
-			if err := dec.Decode(&message); err != nil {
-				return fmt.Errorf("error while decoding error: %v", err)
+			e := new(errors.Error)
+			if err := dec.Decode(e); err != nil {
+				return errors.E(errors.Invalid, "error while decoding error", err)
 			}
-			return errors.New(message)
+			return e
 		case 200:
 			return dec.Decode(reply)
 		default:
-			return fmt.Errorf("bad reply status %s", resp.Status)
+			return errors.E(errors.Invalid, fmt.Sprintf("bad reply status %s", resp.Status))
 		}
 	}
 }

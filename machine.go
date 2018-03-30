@@ -7,7 +7,6 @@ package bigmachine
 import (
 	"bufio"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,12 +14,12 @@ import (
 	"net"
 	"os"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bigmachine/rpc"
 )
 
@@ -217,9 +216,11 @@ func (m *Machine) loop() {
 		// machine unresponsive, because it will not have a chance to reply
 		// to the exec call. We give it some time to recover.
 		err := m.exec(ctx)
-		// TODO(marius): this is an unfortunate hack. It would be nice to
-		// have a better way of doing this.
-		if err != nil && !strings.Contains(err.Error(), "EOF") {
+		// We expect an error since the process is execed before it has a chance
+		// to reply. We check at least that the error comes from the right place
+		// in the stack; other errors (e.g., context cancellations) result in a startup
+		// failure.
+		if err != nil && !errors.Is(errors.Net, err) {
 			m.setError(err)
 			return
 		}
@@ -441,7 +442,7 @@ func (b *backoffRetrier) Next(ctx context.Context) bool {
 	b.wait *= time.Duration(b.factor)
 	deadline, ok := ctx.Deadline()
 	if ok && time.Until(deadline) < wait {
-		b.err = errors.New("ran out of time while waiting for retry")
+		b.err = errors.E(errors.Timeout, "ran out of time while waiting for retry")
 		return false
 	}
 	select {

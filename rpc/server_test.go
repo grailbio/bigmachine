@@ -9,13 +9,14 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
-	"errors"
 	"io"
 	"io/ioutil"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/grailbio/base/digest"
+	"github.com/grailbio/base/errors"
 )
 
 const testPrefix = "/"
@@ -30,7 +31,11 @@ func (s *TestService) Echo(ctx context.Context, arg string, reply *string) error
 }
 
 func (s *TestService) Error(ctx context.Context, message string, reply *string) error {
-	return errors.New(message)
+	return errors.E(message)
+}
+
+func (s *TestService) ErrorError(ctx context.Context, err *errors.Error, reply *string) error {
+	return err
 }
 
 func TestServer(t *testing.T) {
@@ -60,6 +65,14 @@ func TestServer(t *testing.T) {
 	// Just test that nil replies just discard the result.
 	if err := client.Call(ctx, httpsrv.URL, "Test.Echo", "hello world", nil); err != nil {
 		t.Error(err)
+	}
+	_, err = os.Open("/dev/notexist")
+	e := errors.E(errors.Precondition, "xyz", err)
+	err = client.Call(ctx, httpsrv.URL, "Test.ErrorError", e, nil)
+	if err == nil {
+		t.Error("expected error")
+	} else if !errors.Match(e, err) {
+		t.Errorf("error %v does not match expected error %v", err, e)
 	}
 }
 
