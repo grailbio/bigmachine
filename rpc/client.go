@@ -86,11 +86,21 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	}
 	switch arg := reply.(type) {
 	case *io.ReadCloser:
-		if resp.StatusCode != 200 {
+		switch resp.StatusCode {
+		case methodErrorCode:
+			dec := gob.NewDecoder(resp.Body)
+			defer resp.Body.Close()
+			e := new(errors.Error)
+			if err := dec.Decode(e); err != nil {
+				return errors.E(errors.Invalid, "error while decoding error", err)
+			}
+			return e
+		case 200:
+			*arg = resp.Body
+		default:
 			resp.Body.Close()
 			return errors.E(errors.Invalid, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
-		*arg = resp.Body
 		return nil
 	default:
 		defer resp.Body.Close()
