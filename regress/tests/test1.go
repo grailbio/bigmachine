@@ -6,10 +6,15 @@ package main
 
 import (
 	"context"
+	"encoding/gob"
 	"log"
 
 	"github.com/grailbio/bigmachine"
 )
+
+func init() {
+	gob.Register(service{})
+}
 
 type service struct{}
 
@@ -19,17 +24,19 @@ func (service) Strlen(ctx context.Context, arg string, reply *int) error {
 }
 
 func main() {
-	svc := bigmachine.Register(service{})
-	bigmachine.Run()
+	b := bigmachine.Start(bigmachine.Local)
+	defer b.Shutdown()
 	ctx := context.Background()
-	m, err := bigmachine.Start(ctx)
+	m, err := b.Start(ctx, bigmachine.Services{
+		"Service": service{},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	<-m.Wait(bigmachine.Running)
 	const str = "hello world"
 	var n int
-	if err := m.Call(ctx, svc, "Strlen", str, &n); err != nil {
+	if err := m.Call(ctx, "Service.Strlen", str, &n); err != nil {
 		log.Fatal(err)
 	}
 	if got, want := n, len(str); got != want {

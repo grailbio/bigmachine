@@ -21,7 +21,7 @@ type System interface {
 	// Init is called when the bigmachine starts up in order to
 	// initialize the system implementation. If an error is returned,
 	// the Bigmachine fails.
-	Init() error
+	Init(*B) error
 	// Main is called to start  a machine. The system is expected to
 	// take over the process; the bigmachine fails if main returns (and
 	// if it does, it should always return with an error).
@@ -29,9 +29,15 @@ type System interface {
 	// HTTPClient returns an HTTP client that can be used to communicate
 	// from drivers to machines as well as between machines.
 	HTTPClient() *http.Client
+	// ListenAndServe serves the provided handler on an HTTP server that
+	// is reachable from other instances in the bigmachine cluster.
+	ListenAndServe(handle http.Handler) error
 	// Start launches a new machine. The returned machine can be in
 	// Unstarted state, but should eventually become available.
 	Start(context.Context) (*Machine, error)
 	// Exit is called to terminate a machine with the provided exit code.
 	Exit(int)
+	// Shutdown is called on graceful driver exit. It's should be used to
+	// perform system tear down. It is not guaranteed to be called.
+	Shutdown()
 }

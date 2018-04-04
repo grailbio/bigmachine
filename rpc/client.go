@@ -91,7 +91,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	case *io.ReadCloser:
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
-			return errors.E(errors.Invalid, fmt.Sprintf("bad reply status %s", resp.Status))
+			return errors.E(errors.Invalid, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 		*arg = resp.Body
 		return nil
@@ -108,7 +108,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		case 200:
 			return dec.Decode(reply)
 		default:
-			return errors.E(errors.Invalid, fmt.Sprintf("bad reply status %s", resp.Status))
+			return errors.E(errors.Invalid, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 	}
 }

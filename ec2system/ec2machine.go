@@ -143,7 +143,7 @@ func (s *System) Name() string { return "ec2" }
 // Init also establishes the AWS API session with which it
 // communicates to the EC2 API. It uses the default session
 // constructor furnished by the AWS SDK.
-func (s *System) Init() error {
+func (s *System) Init(b *bigmachine.B) error {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		// TODO(marius): it would be nice to be able to provide companion
 		// binaries that are of the correct architecture. (Or even build
@@ -285,13 +285,12 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 	go func() {
 		// TODO(marius): there should be some abstraction that provides the name,
 		// so that it can be overriden, etc. Also, having a user would be nice here.
-		var info bigmachine.Info
-		if err := bigmachine.LocalSupervisor.Info(ctx, struct{}{}, &info); err != nil {
-			log.Printf("sys.Info: %v", err)
-		}
-		binary := filepath.Base(os.Args[0])
-		tag := fmt.Sprintf("%s(%s) %s (bigmachine)", binary, info.Digest.Short(), strings.Join(os.Args[1:], " "))
-		input := &ec2.CreateTagsInput{
+		var (
+			info   = bigmachine.LocalInfo()
+			binary = filepath.Base(os.Args[0])
+			tag    = fmt.Sprintf("%s(%s) %s (bigmachine)", binary, info.Digest.Short(), strings.Join(os.Args[1:], " "))
+		)
+		_, err := s.ec2.CreateTags(&ec2.CreateTagsInput{
 			Resources: []*string{aws.String(instanceId)},
 			Tags: []*ec2.Tag{
 				{Key: aws.String("Name"), Value: aws.String(tag)},
@@ -299,8 +298,7 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 				{Key: aws.String("GOOS"), Value: aws.String(info.Goos)},
 				{Key: aws.String("Digest"), Value: aws.String(info.Digest.String())},
 			},
-		}
-		_, err := s.ec2.CreateTags(input)
+		})
 		if err != nil {
 			log.Printf("ec2.CreateTags: %v", err)
 		}
@@ -483,6 +481,13 @@ func (s *System) HTTPClient() *http.Client {
 // from the same system instance. Main also starts a local HTTP
 // server on port 3333 for debugging and local inspection.
 func (s *System) Main() error {
+	return http.ListenAndServe(":3333", nil)
+}
+
+// ListenAndServe serves the provided handler on a HTTP server
+// configured for secure communications between ec2system
+// instances.
+func (s *System) ListenAndServe(handler http.Handler) error {
 	addr := os.Getenv("BIGMACHINE_ADDR")
 	if addr == "" {
 		return errors.E(errors.Invalid, "no address defined")
@@ -494,12 +499,11 @@ func (s *System) Main() error {
 	server := &http.Server{
 		TLSConfig: config,
 		Addr:      addr,
-		Handler:   http.DefaultServeMux,
+		Handler:   handler,
 	}
 	http2.ConfigureServer(server, &http2.Server{
 		MaxConcurrentStreams: maxConcurrentStreams,
 	})
-	go http.ListenAndServe(":3333", nil)
 	return server.ListenAndServeTLS("", "")
 }
 
@@ -507,6 +511,12 @@ func (s *System) Main() error {
 func (s *System) Exit(code int) {
 	os.Exit(code)
 }
+
+// Shutdown is a no-op.
+//
+// TODO(marius): consider setting longer keepalives to maintain instances
+// for future invocations.
+func (s *System) Shutdown() {}
 
 type args map[string]interface{}
 

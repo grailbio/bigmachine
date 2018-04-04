@@ -15,11 +15,15 @@ import (
 	"os/exec"
 )
 
+// Local is a System that insantiates machines by
+// creating new processes on the local machine.
+var Local System = localSystem{}
+
 // LocalSystem implements a System that instantiates machines
 // by creating processes on the local machine.
 type localSystem struct{}
 
-func (localSystem) Init() error {
+func (localSystem) Init(_ *B) error {
 	return nil
 }
 
@@ -54,11 +58,17 @@ func (localSystem) Start(ctx context.Context) (*Machine, error) {
 }
 
 func (localSystem) Main() error {
+	var c chan struct{}
+	<-c // hang forever
+	panic("not reached")
+}
+
+func (localSystem) ListenAndServe(handler http.Handler) error {
 	addr := os.Getenv("BIGMACHINE_ADDR")
 	if addr == "" {
 		return errors.New("no address defined")
 	}
-	return http.ListenAndServe(addr, nil)
+	return http.ListenAndServe(addr, handler)
 }
 
 func (localSystem) HTTPClient() *http.Client {
@@ -68,6 +78,8 @@ func (localSystem) HTTPClient() *http.Client {
 func (localSystem) Exit(code int) {
 	os.Exit(code)
 }
+
+func (localSystem) Shutdown() {}
 
 func getFreeTCPPort() (int, error) {
 	addr, err := net.ResolveTCPAddr("tcp", ":0")

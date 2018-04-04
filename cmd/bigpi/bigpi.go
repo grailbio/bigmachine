@@ -79,6 +79,7 @@ package main
 
 import (
 	"context"
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"log"
@@ -92,6 +93,10 @@ import (
 	"github.com/grailbio/bigmachine/driver"
 	"golang.org/x/sync/errgroup"
 )
+
+func init() {
+	gob.Register(circlePI{})
+}
 
 type circlePI struct{}
 
@@ -115,8 +120,9 @@ func main() {
 	nsamples := flag.Int("n", 1e10, "number of samples to make")
 	nmachine := flag.Int("nmach", 5, "number of machines to provision for the task")
 	flag.Parse()
-	sampler := bigmachine.Register(circlePI{})
-	defer driver.Run()()
+	b := driver.Start()
+	defer b.Shutdown()
+
 	// Launch a local web server so we have access to profiles.
 	go func() {
 		err := http.ListenAndServe(":3333", nil)
@@ -125,7 +131,10 @@ func main() {
 	ctx := context.Background()
 
 	// Start the desired number of machines.
-	machines, err := bigmachine.StartN(ctx, *nmachine)
+	services := bigmachine.Services{
+		"PI": circlePI{},
+	}
+	machines, err := b.StartN(ctx, *nmachine, services)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -152,7 +161,7 @@ func main() {
 			cores++
 			g.Go(func() error {
 				var count uint64
-				err := m.Call(ctx, sampler, "Sample", numPerMachine/uint64(m.Maxprocs), &count)
+				err := m.Call(ctx, "PI.Sample", numPerMachine/uint64(m.Maxprocs), &count)
 				if err == nil {
 					atomic.AddUint64(&total, count)
 				}

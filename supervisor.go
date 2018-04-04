@@ -31,9 +31,6 @@ var (
 	digestOnce   sync.Once
 )
 
-// LocalSupervisor is the local instance of the supervisor service.
-var LocalSupervisor *Supervisor = new(Supervisor)
-
 func binary() (io.ReadCloser, error) {
 	// TODO(marius): use /proc/self/exe on Linux
 	path, err := os.Executable()
@@ -45,9 +42,38 @@ func binary() (io.ReadCloser, error) {
 
 // Supervisor is the system service installed on every machine.
 type Supervisor struct {
+	b                    *B
+	system               System
+	server               *rpc.Server
 	nextc                chan time.Time
 	saveFds              map[int]int
 	stdoutTee, stderrTee *tee
+}
+
+// StartSupervisor starts a new supervisor based on the provided arguments.
+// The redirect parameter determines whether the supervisor should capture
+// the process's standard IO for calls to Supervisor.Tail.
+func StartSupervisor(b *B, system System, server *rpc.Server, redirect bool) *Supervisor {
+	s := &Supervisor{
+		b:       b,
+		system:  system,
+		server:  server,
+		saveFds: make(map[int]int),
+	}
+	if redirect {
+		var err error
+		s.stderrTee, err = s.teeFd(syscall.Stderr, "/dev/stderr")
+		if err != nil {
+			log.Printf("failed to tee stderr: %v", err)
+		}
+		s.stdoutTee, err = s.teeFd(syscall.Stdout, "/dev/stdout")
+		if err != nil {
+			log.Printf("failed to tee stdout: %v", err)
+		}
+	}
+	s.nextc = make(chan time.Time)
+	go s.watchdog()
+	return s
 }
 
 // Info contains system information about a machine.
@@ -60,27 +86,43 @@ type Info struct {
 	// TODO: resources
 }
 
-// Init starts the supervisor and the supervisor's watchdog. The
-// watchdog kills the process if it is not kept alive at regular
-// intervals.
-func (s *Supervisor) Init(_ *Service) error {
-	if Driver() {
-		return nil
+// LocalInfo returns system information for this process.
+func LocalInfo() Info {
+	digestOnce.Do(func() {
+		r, err := binary()
+		if err != nil {
+			log.Printf("could not read local binary: %v", err)
+			return
+		}
+		defer r.Close()
+		dw := digester.NewWriter()
+		if _, err := io.Copy(dw, r); err != nil {
+			log.Print(err)
+			return
+		}
+		binaryDigest = dw.Digest()
+	})
+	return Info{
+		Goos:   runtime.GOOS,
+		Goarch: runtime.GOARCH,
+		Digest: binaryDigest,
 	}
-	s.saveFds = make(map[int]int)
-	// Capture output stdout and stderr.
-	var err error
-	s.stderrTee, err = s.teeFd(syscall.Stderr, "/dev/stderr")
-	if err != nil {
-		log.Printf("failed to tee stderr: %v", err)
+}
+
+type service struct {
+	Name     string
+	Instance interface{}
+}
+
+// Register registers a new service with the machine (server) associated with
+// this supervisor. After registration, the service is also initialized if it implements
+// the method
+//	Init(*B) error
+func (s *Supervisor) Register(ctx context.Context, svc service, _ *struct{}) error {
+	if err := s.server.Register(svc.Name, svc.Instance); err != nil {
+		return err
 	}
-	s.stdoutTee, err = s.teeFd(syscall.Stdout, "/dev/stdout")
-	if err != nil {
-		log.Printf("failed to tee stdout: %v", err)
-	}
-	s.nextc = make(chan time.Time)
-	go s.watchdog()
-	return nil
+	return maybeInit(svc.Instance, s.b)
 }
 
 // Setargs sets the process' arguments. It should be used before Exec
@@ -152,23 +194,7 @@ func (s *Supervisor) Ping(ctx context.Context, seq int, replyseq *int) error {
 
 // Info returns the info struct for this machine.
 func (s *Supervisor) Info(ctx context.Context, _ struct{}, info *Info) error {
-	digestOnce.Do(func() {
-		r, err := binary()
-		if err != nil {
-			log.Printf("could not read local binary: %v", err)
-			return
-		}
-		defer r.Close()
-		dw := digester.NewWriter()
-		if _, err := io.Copy(dw, r); err != nil {
-			log.Print(err)
-			return
-		}
-		binaryDigest = dw.Digest()
-	})
-	info.Goos = runtime.GOOS
-	info.Goarch = runtime.GOARCH
-	info.Digest = binaryDigest
+	*info = LocalInfo()
 	return nil
 }
 
@@ -246,7 +272,7 @@ func (s *Supervisor) watchdog() {
 		case next = <-s.nextc:
 		}
 		if time.Since(next) > time.Duration(0) {
-			Impl.Exit(1)
+			s.system.Exit(1)
 		}
 	}
 }

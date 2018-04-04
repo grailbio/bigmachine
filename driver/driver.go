@@ -2,14 +2,14 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
-// Package driver provides a convenient API for bigmachine drivers.
-// It should be preferred over using the raw bigmachine APIs.
-// Programs using the driver package should have the following form:
+// Package driver provides a convenient API for bigmachine drivers,
+// which includes configuration by flags. Driver exports the
+// bigmachine's diagnostic http handlers on the default ServeMux.
 //
 //	func main() {
 //		flag.Parse()
-//		// Other initialization
-//		defer driver.Run()()
+//		b := driver.Start()
+//		defer b.shutdown()
 //		// Driver code
 //	}
 package driver
@@ -17,32 +17,31 @@ package driver
 import (
 	"flag"
 	"log"
+	"net/http"
 
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/ec2system"
 )
 
 var (
-	systemFlag   = flag.String("bigsystem", "local", "system on which to run the bigmachine")
-	instanceType = flag.String("bigec2type", "m3.medium", "instance type with which to launch a bigmachine EC2 cluster")
+	systemFlag   = flag.String("bigm.system", "local", "system on which to run the bigmachine")
+	instanceType = flag.String("bigm.ec2type", "m3.medium", "instance type with which to launch a bigmachine EC2 cluster")
 )
 
-// Run starts a bigmachine as configured by the flags provided by
-// this package. The returned shutdown function should be called when
-// the driver exits in order to provide clean shutdown.
-//
-// Run will select a bigmachine system implementation and configure
-// it according to the flags passed in. By default, it runs with a
-// local implementation.
-func Run() (shutdown func()) {
+// Start configures a bigmachine System based on the program's flags,
+// Sand then starts it. ee bigmachine.Start for more details.
+func Start() *bigmachine.B {
+	sys := bigmachine.Local
 	switch *systemFlag {
 	default:
 		log.Fatalf("unrecognized system %s", *systemFlag)
 	case "ec2":
-		bigmachine.Impl = &ec2system.System{
+		sys = &ec2system.System{
 			InstanceType: *instanceType,
 		}
 	case "local":
 	}
-	return bigmachine.Run()
+	b := bigmachine.Start(sys)
+	b.HandleDebug(http.DefaultServeMux)
+	return b
 }

@@ -69,7 +69,7 @@ func (s *fakeSupervisor) Hang(ctx context.Context, _ struct{}, _ *struct{}) erro
 	return ctx.Err()
 }
 
-func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, supervisorService *Service, shutdown func()) {
+func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, shutdown func()) {
 	t.Helper()
 	supervisor = new(fakeSupervisor)
 	srv := rpc.NewServer()
@@ -80,15 +80,13 @@ func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, super
 		httpsrv.Close()
 		t.Fatal(err)
 	}
-	supervisorService = &Service{"Supervisor", supervisor}
 	m = &Machine{
-		Addr:       httpsrv.URL,
-		supervisor: supervisorService,
-		client:     client,
-		owner:      true,
+		Addr:   httpsrv.URL,
+		client: client,
+		owner:  true,
 	}
-	m.start()
-	return m, supervisor, supervisorService, func() {
+	m.start(nil)
+	return m, supervisor, func() {
 		if m.cancel != nil {
 			m.cancel()
 		}
@@ -102,7 +100,7 @@ func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, super
 }
 
 func TestMachineBootup(t *testing.T) {
-	m, supervisor, _, shutdown := newTestMachine(t)
+	m, supervisor, shutdown := newTestMachine(t)
 	defer shutdown()
 
 	<-m.Wait(Running)
@@ -126,23 +124,23 @@ func TestMachineBootup(t *testing.T) {
 }
 
 func TestCallTimeout(t *testing.T) {
-	m, _, service, shutdown := newTestMachine(t)
+	m, _, shutdown := newTestMachine(t)
 	defer shutdown()
 	const timeout = 2 * time.Second
 	ctx, _ := context.WithTimeout(context.Background(), timeout)
-	err := m.Call(ctx, service, "Hang", struct{}{}, nil)
+	err := m.Call(ctx, "Supervisor.Hang", struct{}{}, nil)
 	if got, want := err, context.DeadlineExceeded; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
 func TestMachineContext(t *testing.T) {
-	m, supervisor, service, shutdown := newTestMachine(t)
+	m, supervisor, shutdown := newTestMachine(t)
 	defer shutdown()
 	go func() {
 		supervisor.Hung = true
 	}()
-	err := m.Call(context.Background(), service, "Hang", struct{}{}, nil)
+	err := m.Call(context.Background(), "Supervisor.Hang", struct{}{}, nil)
 	if got, want := err, context.Canceled; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}

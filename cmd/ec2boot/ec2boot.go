@@ -15,7 +15,6 @@ import (
 )
 
 func main() {
-	bigmachine.Impl = ec2system.Instance
-	bigmachine.Run()
-	log.Fatal("bigmachine.Main returned")
+	bigmachine.Start(ec2system.Instance)
+	log.Fatal("bigmachine.Start returned")
 }

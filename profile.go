@@ -21,33 +21,30 @@ import (
 // handler gathers profiles from all machines (at the time of
 // collection) and returns a merged profile representing all cluster
 // activity.
-type profileHandler string
+type profileHandler struct {
+	b     *B
+	which string
+}
 
-func (name profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sec, _ := strconv.ParseInt(r.FormValue("seconds"), 10, 64)
 	if sec == 0 {
 		sec = 30
 	}
-	stateMu.Lock()
-	snapshot := make([]*Machine, 0, len(machines))
-	for _, machine := range machines {
-		snapshot = append(snapshot, machine)
-	}
-	stateMu.Unlock()
 	g, ctx := errgroup.WithContext(r.Context())
 	var mu sync.Mutex
 	var profiles []*profile.Profile
-	for _, m := range snapshot {
+	for _, m := range p.b.Machines() {
 		m := m
 		g.Go(func() error {
 			var rc io.ReadCloser
-			if name == "profile" {
-				if err := m.Call(ctx, supervisor, "CPUProfile", time.Duration(sec)*time.Second, &rc); err != nil {
+			if p.which == "profile" {
+				if err := m.Call(ctx, "Supervisor.CPUProfile", time.Duration(sec)*time.Second, &rc); err != nil {
 					log.Printf("failed to collect profile from %s: %v", m.Addr, err)
 					return nil
 				}
 			} else {
-				if err := m.Call(ctx, supervisor, "Profile", name, &rc); err != nil {
+				if err := m.Call(ctx, "Supervisor.Profile", p.which, &rc); err != nil {
 					log.Printf("failed to collect profile from %s: %v", m.Addr, err)
 				}
 			}

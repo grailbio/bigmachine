@@ -134,7 +134,7 @@ func (s *service) Init() error {
 // Its dispatch rules are described in the package docs. Server
 // implements http.Handler and can be served by any HTTP server.
 type Server struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	services map[string]*service
 }
 
@@ -153,9 +153,6 @@ func NewServer() *Server {
 //
 // Register returns an error if the a service with the provided name
 // has already been registered.
-//
-// Register should be called only before the server begins serving
-// traffic.
 func (s *Server) Register(serviceName string, iface interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -190,7 +187,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	service, method := parts[0], parts[1]
+	s.mu.RLock()
 	svc := s.services[service]
+	s.mu.RUnlock()
 	if svc == nil {
 		http.Error(w, "no such service", 404)
 		return
