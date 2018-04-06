@@ -455,6 +455,7 @@ func (s *System) cloudConfig() *cloudConfig {
 			{{end}}
 			[Service]
 			Type=oneshot
+			LimitNOFILE=infinity
 			{{.environ}}
 			ExecStart=/opt/bin/bootmachine
 		`, args{"mortal": !*immortal, "environ": environ}),
