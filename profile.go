@@ -35,6 +35,9 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var mu sync.Mutex
 	var profiles []*profile.Profile
 	for _, m := range p.b.Machines() {
+		if m.State() != Running {
+			continue
+		}
 		m := m
 		g.Go(func() error {
 			var rc io.ReadCloser
