@@ -145,6 +145,16 @@ func main() {
 		if err := m.Err(); err != nil {
 			log.Fatal(err)
 		}
+		if mem, err := m.MemInfo(ctx); err != nil {
+			log.Printf("meminfo %s: %v", m.Addr, err)
+		} else {
+			log.Printf("mem %s: %s", m.Addr, mem)
+		}
+		if disk, err := m.DiskInfo(ctx); err != nil {
+			log.Printf("diskinfo %s: %v", m.Addr, err)
+		} else {
+			log.Printf("disk %s: %v", m.Addr, disk)
+		}
 	}
 	log.Print("all machines are ready")
 	// Number of samples per machine

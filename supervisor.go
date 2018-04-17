@@ -5,6 +5,7 @@
 package bigmachine
 
 import (
+	"bufio"
 	"context"
 	"crypto"
 	"fmt"
@@ -14,11 +15,13 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/grailbio/base/data"
 	"github.com/grailbio/base/digest"
 	"github.com/grailbio/bigmachine/rpc"
 )
@@ -195,6 +198,56 @@ func (s *Supervisor) Ping(ctx context.Context, seq int, replyseq *int) error {
 // Info returns the info struct for this machine.
 func (s *Supervisor) Info(ctx context.Context, _ struct{}, info *Info) error {
 	*info = LocalInfo()
+	return nil
+}
+
+// MemInfo returns system memory usage information as provided by
+// /proc/meminfo. It returns errors on systems that do not support
+// /proc/meminfo.
+func (s *Supervisor) MemInfo(ctx context.Context, _ struct{}, info *MemInfo) error {
+	f, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		parts := strings.SplitN(scan.Text(), ":", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid line in /proc/meminfo: %q", scan.Text())
+		}
+		key, val := parts[0], parts[1]
+		val = strings.Replace(val, "kB", "", 1)
+		val = strings.TrimSpace(val)
+		var vp *data.Size
+		switch key {
+		case "MemTotal":
+			vp = &info.Total
+		case "MemFree":
+			vp = &info.Free
+		case "MemAvailable":
+			vp = &info.Available
+		}
+		if vp == nil {
+			continue
+		}
+		ival, err := strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return fmt.Errorf("error parsing value for key %s from %q: %v", key, scan.Text(), err)
+		}
+		*vp = data.Size(ival) * data.KiB
+	}
+	return scan.Err()
+}
+
+// DiskInfo returns disk usage information.
+func (s *Supervisor) DiskInfo(ctx context.Context, _ struct{}, info *DiskInfo) error {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(os.TempDir(), &stat); err != nil {
+		return err
+	}
+	info.Free = data.Size(stat.Bavail * uint64(stat.Bsize))
+	info.Total = data.Size(stat.Blocks * uint64(stat.Bsize))
 	return nil
 }
 

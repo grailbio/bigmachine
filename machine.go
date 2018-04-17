@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grailbio/base/data"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bigmachine/rpc"
 )
@@ -86,6 +87,24 @@ func (f *cancelFunc) Cancel() {
 	f.cancel()
 }
 
+// A MemInfo describes system memory usage.
+type MemInfo struct {
+	Total, Free, Available data.Size
+}
+
+func (m MemInfo) String() string {
+	return fmt.Sprintf("total:%s free:%s available:%s", m.Total, m.Free, m.Available)
+}
+
+// A DiskInfo describes system disk usage.
+type DiskInfo struct {
+	Total, Free data.Size
+}
+
+func (d DiskInfo) String() string {
+	return fmt.Sprintf("total:%s free:%s", data.Size(d.Total), data.Size(d.Free))
+}
+
 // A Machine is a single machine managed by bigmachine. Each machine
 // is a "one-shot" execution of a bigmachine binary.  Machines embody
 // a failure detection mechanism, but does not provide fault
@@ -139,6 +158,18 @@ func (m *Machine) Wait(state State) <-chan struct{} {
 	}
 	m.mu.Unlock()
 	return c
+}
+
+// MemInfo returns the machine's memory usage information.
+func (m *Machine) MemInfo(ctx context.Context) (info MemInfo, err error) {
+	err = m.Call(ctx, "Supervisor.MemInfo", struct{}{}, &info)
+	return
+}
+
+// DiskInfo returns the machine's disk usage information.
+func (m *Machine) DiskInfo(ctx context.Context) (info DiskInfo, err error) {
+	err = m.Call(ctx, "Supervisor.DiskInfo", struct{}{}, &info)
+	return
 }
 
 // Err returns a machine's error. Err is only well-defined when the machine
