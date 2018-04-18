@@ -87,9 +87,10 @@ func (f *cancelFunc) Cancel() {
 	f.cancel()
 }
 
-// A MemInfo describes system memory usage.
+// A MemInfo describes system and Go runtime memory usage.
 type MemInfo struct {
 	Total, Free, Available data.Size
+	MemStats               runtime.MemStats
 }
 
 func (m MemInfo) String() string {

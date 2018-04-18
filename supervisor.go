@@ -201,13 +201,17 @@ func (s *Supervisor) Info(ctx context.Context, _ struct{}, info *Info) error {
 	return nil
 }
 
-// MemInfo returns system memory usage information as provided by
-// /proc/meminfo. It returns errors on systems that do not support
-// /proc/meminfo.
+// MemInfo returns system and Go runtime memory usage information.
+// System usage information is derived from /proc/meminfo, and is not
+// populated when this is absent from the system.
 func (s *Supervisor) MemInfo(ctx context.Context, _ struct{}, info *MemInfo) error {
+	info.Total = -1
+	info.Free = -1
+	info.Available = -1
+	runtime.ReadMemStats(&info.MemStats)
 	f, err := os.Open("/proc/meminfo")
 	if err != nil {
-		return err
+		return nil
 	}
 	defer f.Close()
 	scan := bufio.NewScanner(f)
@@ -240,7 +244,8 @@ func (s *Supervisor) MemInfo(ctx context.Context, _ struct{}, info *MemInfo) err
 	return scan.Err()
 }
 
-// DiskInfo returns disk usage information.
+// DiskInfo returns disk usage information on the disk where the
+// temporary directory resides.
 func (s *Supervisor) DiskInfo(ctx context.Context, _ struct{}, info *DiskInfo) error {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(os.TempDir(), &stat); err != nil {
