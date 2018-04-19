@@ -200,8 +200,9 @@ func (b *B) Machines() []*Machine {
 // HandleDebug registers diagnostic http endpoints on the provided
 // ServeMux.
 func (b *B) HandleDebug(mux *http.ServeMux) {
-	mux.Handle("/debug/bigprof/profile", &profileHandler{b, "profile"})
-	mux.Handle("/debug/bigprof/heap", &profileHandler{b, "heap"})
+	mux.Handle("/debug/bigmachine/pprof/profile", &profileHandler{b, "profile"})
+	mux.Handle("/debug/bigmachine/pprof/heap", &profileHandler{b, "heap"})
+	mux.Handle("/debug/bigmachine/status", &statusHandler{b})
 }
 
 // Shutdown tears down resources associated with this B. It should be called

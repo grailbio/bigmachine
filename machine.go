@@ -17,10 +17,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/grailbio/base/data"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/rpc"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
 )
 
 // TODO(marius): We could define a Gob decoder for machines that
@@ -86,21 +88,18 @@ func (f *cancelFunc) Cancel() {
 
 // A MemInfo describes system and Go runtime memory usage.
 type MemInfo struct {
-	Total, Free, Available data.Size
-	MemStats               runtime.MemStats
-}
-
-func (m MemInfo) String() string {
-	return fmt.Sprintf("total:%s free:%s available:%s", m.Total, m.Free, m.Available)
+	System  mem.VirtualMemoryStat
+	Runtime runtime.MemStats
 }
 
 // A DiskInfo describes system disk usage.
 type DiskInfo struct {
-	Total, Free data.Size
+	Usage disk.UsageStat
 }
 
-func (d DiskInfo) String() string {
-	return fmt.Sprintf("total:%s free:%s", data.Size(d.Total), data.Size(d.Free))
+// A LoadInfo describes system load.
+type LoadInfo struct {
+	Averages load.AvgStat
 }
 
 // A Machine is a single machine managed by bigmachine. Each machine
@@ -167,6 +166,12 @@ func (m *Machine) MemInfo(ctx context.Context) (info MemInfo, err error) {
 // DiskInfo returns the machine's disk usage information.
 func (m *Machine) DiskInfo(ctx context.Context) (info DiskInfo, err error) {
 	err = m.Call(ctx, "Supervisor.DiskInfo", struct{}{}, &info)
+	return
+}
+
+// LoadInfo returns the machine's current load.
+func (m *Machine) LoadInfo(ctx context.Context) (info LoadInfo, err error) {
+	err = m.Call(ctx, "Supervisor.LoadInfo", struct{}{}, &info)
 	return
 }
 

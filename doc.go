@@ -85,7 +85,7 @@
 	A bigmachine program attempts to appear and act like a single program:
 
 		- Each machine's standard output and error are copied to the driver;
-		- bigmachine provides aggregating profile handlers at /debug/bigprof/
+		- bigmachine provides aggregating profile handlers at /debug/bigmachine/pprof
 		  so that aggregate profiles may be taken over the full cluster;
 		- command line flags are propagated from the driver to the machine,
 		  so that a binary run can be configured in the usual way.

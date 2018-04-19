@@ -5,7 +5,6 @@
 package bigmachine
 
 import (
-	"bufio"
 	"context"
 	"crypto"
 	"fmt"
@@ -14,16 +13,17 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/grailbio/base/data"
 	"github.com/grailbio/base/digest"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/rpc"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
 )
 
 const maxTeeBuffer = 1 << 20
@@ -202,57 +202,34 @@ func (s *Supervisor) Info(ctx context.Context, _ struct{}, info *Info) error {
 }
 
 // MemInfo returns system and Go runtime memory usage information.
-// System usage information is derived from /proc/meminfo, and is not
-// populated when this is absent from the system.
 func (s *Supervisor) MemInfo(ctx context.Context, _ struct{}, info *MemInfo) error {
-	info.Total = -1
-	info.Free = -1
-	info.Available = -1
-	runtime.ReadMemStats(&info.MemStats)
-	f, err := os.Open("/proc/meminfo")
+	runtime.ReadMemStats(&info.Runtime)
+	vm, err := mem.VirtualMemory()
 	if err != nil {
-		return nil
+		return err
 	}
-	defer f.Close()
-	scan := bufio.NewScanner(f)
-	for scan.Scan() {
-		parts := strings.SplitN(scan.Text(), ":", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid line in /proc/meminfo: %q", scan.Text())
-		}
-		key, val := parts[0], parts[1]
-		val = strings.Replace(val, "kB", "", 1)
-		val = strings.TrimSpace(val)
-		var vp *data.Size
-		switch key {
-		case "MemTotal":
-			vp = &info.Total
-		case "MemFree":
-			vp = &info.Free
-		case "MemAvailable":
-			vp = &info.Available
-		}
-		if vp == nil {
-			continue
-		}
-		ival, err := strconv.ParseInt(val, 10, 64)
-		if err != nil {
-			return fmt.Errorf("error parsing value for key %s from %q: %v", key, scan.Text(), err)
-		}
-		*vp = data.Size(ival) * data.KiB
-	}
-	return scan.Err()
+	info.System = *vm
+	return nil
 }
 
 // DiskInfo returns disk usage information on the disk where the
 // temporary directory resides.
 func (s *Supervisor) DiskInfo(ctx context.Context, _ struct{}, info *DiskInfo) error {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(os.TempDir(), &stat); err != nil {
+	disk, err := disk.Usage(os.TempDir())
+	if err != nil {
 		return err
 	}
-	info.Free = data.Size(stat.Bavail * uint64(stat.Bsize))
-	info.Total = data.Size(stat.Blocks * uint64(stat.Bsize))
+	info.Usage = *disk
+	return nil
+}
+
+// LoadInfo returns system load information.
+func (s *Supervisor) LoadInfo(ctx context.Context, _ struct{}, info *LoadInfo) error {
+	load, err := load.AvgWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	info.Averages = *load
 	return nil
 }
 

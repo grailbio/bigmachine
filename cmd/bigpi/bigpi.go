@@ -50,8 +50,8 @@
 	find a bug: we were using the global rand.Float64 which requires a lock.
 	The CPU profile highlighted the lock contention easily:
 
-		% go tool pprof localhost:3333/debug/bigprof/profile
-		Fetching profile over HTTP from http://localhost:3333/debug/bigprof/profile
+		% go tool pprof localhost:3333/debug/bigmachine/pprof/profile
+		Fetching profile over HTTP from http://localhost:3333/debug/bigmachine/pprof/profile
 		Saved profile in /Users/marius/pprof/pprof.045821636.samples.cpu.001.pb.gz
 		File: 045821636
 		Type: cpu
@@ -144,16 +144,6 @@ func main() {
 		log.Printf("machine %s %s", m.Addr, m.State())
 		if err := m.Err(); err != nil {
 			log.Fatal(err)
-		}
-		if mem, err := m.MemInfo(ctx); err != nil {
-			log.Printf("meminfo %s: %v", m.Addr, err)
-		} else {
-			log.Printf("mem %s: %s", m.Addr, mem)
-		}
-		if disk, err := m.DiskInfo(ctx); err != nil {
-			log.Printf("diskinfo %s: %v", m.Addr, err)
-		} else {
-			log.Printf("disk %s: %v", m.Addr, disk)
 		}
 	}
 	log.Print("all machines are ready")
