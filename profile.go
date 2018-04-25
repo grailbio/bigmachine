@@ -7,13 +7,13 @@ package bigmachine
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/google/pprof/profile"
+	"github.com/grailbio/base/log"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -43,18 +43,18 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			var rc io.ReadCloser
 			if p.which == "profile" {
 				if err := m.Call(ctx, "Supervisor.CPUProfile", time.Duration(sec)*time.Second, &rc); err != nil {
-					log.Printf("failed to collect profile from %s: %v", m.Addr, err)
+					log.Error.Printf("failed to collect profile from %s: %v", m.Addr, err)
 					return nil
 				}
 			} else {
 				if err := m.Call(ctx, "Supervisor.Profile", p.which, &rc); err != nil {
-					log.Printf("failed to collect profile from %s: %v", m.Addr, err)
+					log.Error.Printf("failed to collect profile from %s: %v", m.Addr, err)
 				}
 			}
 			defer rc.Close()
 			prof, err := profile.Parse(rc)
 			if err != nil {
-				log.Printf("failed to parse profile from %s: %v", m.Addr, err)
+				log.Error.Printf("failed to parse profile from %s: %v", m.Addr, err)
 				return nil
 			}
 			mu.Lock()

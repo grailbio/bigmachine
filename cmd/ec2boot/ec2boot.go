@@ -8,8 +8,7 @@
 package main
 
 import (
-	"log"
-
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/ec2system"
 )

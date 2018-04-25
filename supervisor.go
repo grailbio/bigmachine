@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/grailbio/base/data"
 	"github.com/grailbio/base/digest"
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/rpc"
 )
 
@@ -67,11 +67,11 @@ func StartSupervisor(b *B, system System, server *rpc.Server, redirect bool) *Su
 		var err error
 		s.stderrTee, err = s.teeFd(syscall.Stderr, "/dev/stderr")
 		if err != nil {
-			log.Printf("failed to tee stderr: %v", err)
+			log.Error.Printf("failed to tee stderr: %v", err)
 		}
 		s.stdoutTee, err = s.teeFd(syscall.Stdout, "/dev/stdout")
 		if err != nil {
-			log.Printf("failed to tee stdout: %v", err)
+			log.Error.Printf("failed to tee stdout: %v", err)
 		}
 	}
 	s.nextc = make(chan time.Time)
@@ -94,13 +94,13 @@ func LocalInfo() Info {
 	digestOnce.Do(func() {
 		r, err := binary()
 		if err != nil {
-			log.Printf("could not read local binary: %v", err)
+			log.Error.Printf("could not read local binary: %v", err)
 			return
 		}
 		defer r.Close()
 		dw := digester.NewWriter()
 		if _, err := io.Copy(dw, r); err != nil {
-			log.Print(err)
+			log.Error.Print(err)
 			return
 		}
 		binaryDigest = dw.Digest()
@@ -160,10 +160,10 @@ func (s *Supervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) erro
 	// by our replacement.
 	for orig, save := range s.saveFds {
 		if err := syscall.Dup2(save, orig); err != nil {
-			log.Printf("dup2 %d %d: %v", save, orig, err)
+			log.Error.Printf("dup2 %d %d: %v", save, orig, err)
 		}
 		if err := syscall.Close(save); err != nil {
-			log.Printf("close %d: %v", save, err)
+			log.Error.Printf("close %d: %v", save, err)
 		}
 	}
 	return syscall.Exec(path, os.Args, os.Environ())
@@ -356,7 +356,7 @@ func (s *Supervisor) teeFd(fd int, name string) (*tee, error) {
 	go func() {
 		_, err := io.Copy(tee, r)
 		if err != nil {
-			log.Printf("tee %d %s: %v", fd, name, err)
+			log.Error.Printf("tee %d %s: %v", fd, name, err)
 		}
 	}()
 	return tee, nil

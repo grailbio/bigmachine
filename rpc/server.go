@@ -48,7 +48,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"path"
 	"reflect"
@@ -57,6 +56,7 @@ import (
 	"sync"
 
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/log"
 )
 
 // MethodErrorCode is the HTTP error used for method errors.
@@ -238,7 +238,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := func() (err error) {
 		defer func() {
 			if e := recover(); e != nil {
-				log.Printf("panic in method call\n%s", string(debug.Stack()))
+				log.Error.Printf("panic in method call\n%s", string(debug.Stack()))
 				err = fmt.Errorf("panic: %v", e)
 			}
 		}()
@@ -267,7 +267,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if _, err := io.Copy(wr, readcloser); err != nil {
-			log.Printf("rpc: error writing reply: %v", err)
+			log.Error.Printf("rpc: error writing reply: %v", err)
 			return // not much we can do here
 		}
 	} else {
@@ -281,7 +281,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// TODO: should we buffer the write?
 		enc := gob.NewEncoder(w)
 		if err := enc.Encode(replyIface); err != nil {
-			log.Printf("rpc: error writing reply: %v", err)
+			log.Error.Printf("rpc: error writing reply: %v", err)
 			// May not work, but it's worth a try:
 			http.Error(w, fmt.Sprint(err), 500)
 			return

@@ -7,10 +7,8 @@ package bigmachine
 import (
 	"bufio"
 	"context"
-	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"runtime"
@@ -21,10 +19,9 @@ import (
 
 	"github.com/grailbio/base/data"
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/rpc"
 )
-
-var traceFlag = flag.Bool("bigm.trace", false, "trace bigmachine RPCs")
 
 // TODO(marius): We could define a Gob decoder for machines that
 // encode its address and dial it on decode. On the other hand, it's
@@ -195,7 +192,7 @@ func (m *Machine) setError(err error) {
 	m.err = err
 	m.mu.Unlock()
 	m.setState(Stopped)
-	log.Printf("%s: %v", m.Addr, err)
+	log.Error.Printf("%s: %v", m.Addr, err)
 }
 
 func (m *Machine) errorf(format string, args ...interface{}) {
@@ -244,7 +241,7 @@ func (m *Machine) loop() {
 		// after we exec.
 		keepaliveCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		if err := m.call(keepaliveCtx, "Supervisor.Keepalive", 10*time.Minute, nil); err != nil {
-			log.Printf("Keepalive %v: %v", m.Addr, err)
+			log.Error.Printf("Keepalive %v: %v", m.Addr, err)
 		}
 		cancel()
 		// Exec the current binary onto the machine. This will make the
@@ -297,7 +294,7 @@ func (m *Machine) loop() {
 	for _, fd := range []int{syscall.Stdout, syscall.Stderr} {
 		go func(fd int) {
 			if err := m.tail(ctx, fd); err != nil {
-				log.Printf("tail %s %d: %v; no longer receiving logs from machine", m.Addr, fd, err)
+				log.Error.Printf("tail %s %d: %v; no longer receiving logs from machine", m.Addr, fd, err)
 			}
 		}(fd)
 	}
@@ -390,17 +387,17 @@ func (m *Machine) exec(ctx context.Context) error {
 }
 
 func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply interface{}) (err error) {
-	if *traceFlag {
+	if log.At(log.Debug) {
 		var deadline string
 		if d, ok := ctx.Deadline(); ok {
 			deadline = fmt.Sprintf(" [deadline:%s]", time.Until(d))
 		}
-		log.Printf("%s %s(%v)%s", m.Addr, serviceMethod, arg, deadline)
+		log.Debug.Printf("%s %s(%v)%s", m.Addr, serviceMethod, arg, deadline)
 		defer func() {
 			if err != nil {
-				log.Printf("%s %s(%v) error: %v", m.Addr, serviceMethod, arg, err)
+				log.Debug.Printf("%s %s(%v) error: %v", m.Addr, serviceMethod, arg, err)
 			} else {
-				log.Printf("%s %s(%v) ok %v", m.Addr, serviceMethod, arg, reply)
+				log.Debug.Printf("%s %s(%v) ok %v", m.Addr, serviceMethod, arg, reply)
 			}
 		}()
 	}
@@ -413,7 +410,7 @@ func (m *Machine) retryCall(ctx context.Context, retrier retrier, serviceMethod 
 			// TODO(marius): this isn't quite right. Introduce an errors package
 			// similar to Reflow's here to categorize errors properly.
 			if _, ok := err.(net.Error); !ok {
-				log.Printf("%s %s(%v): %v", m.Addr, serviceMethod, arg, err)
+				log.Error.Printf("%s %s(%v): %v", m.Addr, serviceMethod, arg, err)
 			}
 		} else {
 			return nil

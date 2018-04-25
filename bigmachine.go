@@ -10,11 +10,11 @@ import (
 	// Sha256 is imported because we use its implementation for
 	// fingerprinting binaries.
 	_ "crypto/sha256"
-	"log"
 	"os"
 	"sync"
 
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/rpc"
 	"golang.org/x/sync/errgroup"
 )

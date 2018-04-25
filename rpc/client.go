@@ -8,20 +8,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
-	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/log"
 	"golang.org/x/net/context/ctxhttp"
 )
 
 const gobContentType = "application/x-gob"
-
-var rpcdebug = flag.Bool("rpcdebug", false, "log RPC debug messages")
 
 // A Client invokes remote methods on RPC servers.
 type Client struct {
@@ -52,13 +49,13 @@ func NewClient(client *http.Client, prefix string) (*Client, error) {
 // io.ReadCloser errors on read.
 func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, reply interface{}) (err error) {
 	url := strings.TrimRight(addr, "/") + c.prefix + serviceMethod
-	if *rpcdebug {
-		log.Printf("call %s %s %v", addr, serviceMethod, arg)
+	if log.At(log.Debug) {
+		log.Debug.Printf("call %s %s %v", addr, serviceMethod, arg)
 		defer func() {
 			if err != nil {
-				log.Printf("call error %s %s %v: %v", addr, serviceMethod, arg, err)
+				log.Debug.Printf("call error %s %s %v: %v", addr, serviceMethod, arg, err)
 			} else {
-				log.Printf("call ok %s %s %v = %v", addr, serviceMethod, arg, reply)
+				log.Debug.Printf("call ok %s %s %v = %v", addr, serviceMethod, arg, reply)
 			}
 		}()
 	}

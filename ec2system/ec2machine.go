@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"html/template"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,6 +44,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/ec2system/instances"
 	"golang.org/x/net/http2"
@@ -300,7 +300,7 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			},
 		})
 		if err != nil {
-			log.Printf("ec2.CreateTags: %v", err)
+			log.Error.Printf("ec2.CreateTags: %v", err)
 		}
 	}()
 	// TODO(marius): custom WaitUntilInstanceRunningWithContext that's more aggressive

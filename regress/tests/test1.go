@@ -7,8 +7,8 @@ package main
 import (
 	"context"
 	"encoding/gob"
-	"log"
 
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine"
 )
 

@@ -8,11 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+
+	"github.com/grailbio/base/log"
 )
 
 // Local is a System that insantiates machines by

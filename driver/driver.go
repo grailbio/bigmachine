@@ -16,9 +16,9 @@ package driver
 
 import (
 	"flag"
-	"log"
 	"net/http"
 
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/ec2system"
 )
