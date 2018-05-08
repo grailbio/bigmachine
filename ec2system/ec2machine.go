@@ -26,6 +26,7 @@ package ec2system
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -488,8 +489,10 @@ func (s *System) Main() error {
 // ListenAndServe serves the provided handler on a HTTP server
 // configured for secure communications between ec2system
 // instances.
-func (s *System) ListenAndServe(handler http.Handler) error {
-	addr := os.Getenv("BIGMACHINE_ADDR")
+func (s *System) ListenAndServe(addr string, handler http.Handler) error {
+	if addr == "" {
+		addr = os.Getenv("BIGMACHINE_ADDR")
+	}
 	if addr == "" {
 		return errors.E(errors.Invalid, "no address defined")
 	}
@@ -497,6 +500,7 @@ func (s *System) ListenAndServe(handler http.Handler) error {
 	if err != nil {
 		return err
 	}
+	config.ClientAuth = tls.RequireAndVerifyClientCert
 	server := &http.Server{
 		TLSConfig: config,
 		Addr:      addr,

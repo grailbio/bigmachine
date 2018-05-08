@@ -98,7 +98,7 @@ func (b *B) run() {
 	mux := http.NewServeMux()
 	mux.Handle(RpcPrefix, b.server)
 	go func() {
-		log.Fatal(b.system.ListenAndServe(mux))
+		log.Fatal(b.system.ListenAndServe("", mux))
 	}()
 	log.Fatal(b.system.Main())
 	panic("not reached")

@@ -75,7 +75,7 @@ func (s *System) HTTPClient() *http.Client {
 
 // ListenAndServe panics. It should not be called, provided a
 // correct bigmachine implementation.
-func (s *System) ListenAndServe(handler http.Handler) error {
+func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 	panic("ListenAndServe called on testsystem")
 }
 

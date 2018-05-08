@@ -30,8 +30,9 @@ type System interface {
 	// from drivers to machines as well as between machines.
 	HTTPClient() *http.Client
 	// ListenAndServe serves the provided handler on an HTTP server that
-	// is reachable from other instances in the bigmachine cluster.
-	ListenAndServe(handle http.Handler) error
+	// is reachable from other instances in the bigmachine cluster. If addr
+	// is the empty string, the default cluster address is used.
+	ListenAndServe(addr string, handle http.Handler) error
 	// Start launches a new machine. The returned machine can be in
 	// Unstarted state, but should eventually become available.
 	Start(context.Context) (*Machine, error)

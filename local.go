@@ -64,8 +64,10 @@ func (localSystem) Main() error {
 	panic("not reached")
 }
 
-func (localSystem) ListenAndServe(handler http.Handler) error {
-	addr := os.Getenv("BIGMACHINE_ADDR")
+func (localSystem) ListenAndServe(addr string, handler http.Handler) error {
+	if addr == "" {
+		addr = os.Getenv("BIGMACHINE_ADDR")
+	}
 	if addr == "" {
 		return errors.New("no address defined")
 	}
