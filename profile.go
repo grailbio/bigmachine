@@ -5,9 +5,12 @@
 package bigmachine
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -31,10 +34,14 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if sec == 0 {
 		sec = 30
 	}
+	debug, _ := strconv.Atoi(r.FormValue("debug"))
 	g, ctx := errgroup.WithContext(r.Context())
-	var mu sync.Mutex
-	var profiles []*profile.Profile
-	for _, m := range p.b.Machines() {
+	var (
+		mu       sync.Mutex
+		profiles = map[*Machine][]byte{}
+		machines = p.b.Machines()
+	)
+	for _, m := range machines {
 		if m.State() != Running {
 			continue
 		}
@@ -47,18 +54,18 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return nil
 				}
 			} else {
-				if err := m.Call(ctx, "Supervisor.Profile", p.which, &rc); err != nil {
+				if err := m.Call(ctx, "Supervisor.Profile", profileRequest{p.which, debug}, &rc); err != nil {
 					log.Error.Printf("failed to collect profile from %s: %v", m.Addr, err)
 				}
 			}
 			defer rc.Close()
-			prof, err := profile.Parse(rc)
+			b, err := ioutil.ReadAll(rc)
 			if err != nil {
-				log.Error.Printf("failed to parse profile from %s: %v", m.Addr, err)
+				log.Error.Printf("failed to read profile from %s: %v", m.Addr, err)
 				return nil
 			}
 			mu.Lock()
-			profiles = append(profiles, prof)
+			profiles[m] = b
 			mu.Unlock()
 			return nil
 		})
@@ -71,7 +78,31 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		profileErrorf(w, http.StatusNotFound, "no profiles are available at this time")
 		return
 	}
-	prof, err := profile.Merge(profiles)
+	// Debug output is intended for human consumption.
+	if debug > 0 {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		sort.Slice(machines, func(i, j int) bool { return machines[i].Addr < machines[j].Addr })
+		for _, m := range machines {
+			prof := profiles[m]
+			if prof == nil {
+				continue
+			}
+			fmt.Fprintf(w, "%s:\n", m.Addr)
+			w.Write(prof)
+			fmt.Fprintln(w)
+		}
+		return
+	}
+
+	var parsed []*profile.Profile
+	for m, b := range profiles {
+		prof, err := profile.Parse(bytes.NewReader(b))
+		if err != nil {
+			log.Error.Printf("failed to parse profile from %s: %v", m.Addr, err)
+		}
+		parsed = append(parsed, prof)
+	}
+	prof, err := profile.Merge(parsed)
 	if err != nil {
 		profileErrorf(w, http.StatusInternalServerError, "profile merge error: %v", err)
 		return

@@ -263,21 +263,36 @@ func (s *Supervisor) CPUProfile(ctx context.Context, dur time.Duration, prof *io
 	return nil
 }
 
+type profileRequest struct {
+	Name  string
+	Debug int
+}
+
 // Profile returns the named pprof profile for the current process.
 // The profile is returned in protocol buffer format.
-//
-// TODO(marius): once bigmachine/rpc supports protobuf encoding,
-// just return the protobuf directly here.
-func (s *Supervisor) Profile(ctx context.Context, name string, prof *io.ReadCloser) error {
-	p := pprof.Lookup(name)
+func (s *Supervisor) Profile(ctx context.Context, req profileRequest, prof *io.ReadCloser) error {
+	p := pprof.Lookup(req.Name)
 	if p == nil {
-		return fmt.Errorf("no such profile %s", name)
+		return fmt.Errorf("no such profile %s", req.Name)
 	}
 	r, w := io.Pipe()
 	*prof = r
 	go func() {
-		w.CloseWithError(p.WriteTo(w, 0))
+		w.CloseWithError(p.WriteTo(w, req.Debug))
 	}()
+	return nil
+}
+
+type profileStat struct {
+	Name  string
+	Count int
+}
+
+// Profiles returns the set of available profiles and their counts.
+func (s *Supervisor) Profiles(ctx context.Context, _ struct{}, profiles *[]profileStat) error {
+	for _, p := range pprof.Profiles() {
+		*profiles = append(*profiles, profileStat{p.Name(), p.Count()})
+	}
 	return nil
 }
 

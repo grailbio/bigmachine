@@ -6,7 +6,11 @@ package bigmachine
 
 import (
 	"context"
+	"html/template"
 	"net/http"
+	"sort"
+	"strings"
+	"time"
 	// Sha256 is imported because we use its implementation for
 	// fingerprinting binaries.
 	_ "crypto/sha256"
@@ -202,7 +206,74 @@ func (b *B) Machines() []*Machine {
 func (b *B) HandleDebug(mux *http.ServeMux) {
 	mux.Handle("/debug/bigmachine/pprof/profile", &profileHandler{b, "profile"})
 	mux.Handle("/debug/bigmachine/pprof/heap", &profileHandler{b, "heap"})
+	mux.HandleFunc("/debug/bigmachine/pprof/", b.pprofIndex)
 	mux.Handle("/debug/bigmachine/status", &statusHandler{b})
+}
+
+var indexTmpl = template.Must(template.New("index").Parse(`<html>
+<head>
+<title>/debug/bigmachine/pprof</title>
+</head>
+<body>
+/debug/bigmachine/pprof<br>
+profiles:<br>
+<table>
+{{range .}}
+<tr><td align=right>{{.Count}}<td><a href="{{.Name}}?debug=1">{{.Name}}</a>
+{{end}}
+</table>
+<br>
+<a href="goroutine?debug=2">full goroutine stack dump</a>
+</body>
+</html>
+`))
+
+func (b *B) pprofIndex(w http.ResponseWriter, r *http.Request) {
+	which := strings.TrimPrefix(r.URL.Path, "/debug/bigmachine/pprof/")
+	if which != "" {
+		handler := profileHandler{b, which}
+		handler.ServeHTTP(w, r)
+		return
+	}
+
+	var (
+		stats  = make(map[string]profileStat)
+		g, ctx = errgroup.WithContext(r.Context())
+		mu     sync.Mutex
+	)
+	for _, m := range b.Machines() {
+		m := m
+		g.Go(func() error {
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			var mstats []profileStat
+			if err := m.Call(ctx, "Supervisor.Profiles", struct{}{}, &mstats); err != nil {
+				log.Error.Printf("%q.\"Supervisor.Profiles\": %v", m.Addr, err)
+				return nil
+			}
+			mu.Lock()
+			for _, p := range mstats {
+				stats[p.Name] = profileStat{
+					Name:  p.Name,
+					Count: stats[p.Name].Count + p.Count,
+				}
+			}
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		profileErrorf(w, 500, "error fetching profiles: %v", err)
+		return
+	}
+	all := make([]profileStat, 0, len(stats))
+	for _, p := range stats {
+		all = append(all, p)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
+	if err := indexTmpl.Execute(w, all); err != nil {
+		log.Error.Print(err)
+	}
 }
 
 // Shutdown tears down resources associated with this B. It should be called
