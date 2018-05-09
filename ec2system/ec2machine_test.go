@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grailbio/internal/testutil"
+	"github.com/grailbio/testutil"
 	"golang.org/x/net/http2"
 )
 
