@@ -48,11 +48,11 @@ func newCertificateAuthority(path string) (*certificateAuthority, error) {
 		}
 		template := x509.Certificate{
 			SerialNumber: big.NewInt(1),
-			Subject: pkix.Name{
-				CommonName: "bigmachine",
-			},
-			NotBefore: time.Now(),
-			NotAfter:  time.Now().Add(certDuration),
+			Subject:      pkix.Name{CommonName: "bigmachine"},
+			NotBefore:    time.Now().Add(-driftMargin),
+			// Newton says we have at least this long:
+			//	https://newtonprojectca.files.wordpress.com/2013/06/reply-to-tom-harpur-2-page-full-version.pdf
+			NotAfter: time.Date(2060, 1, 1, 0, 0, 0, 0, time.UTC),
 
 			KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 			ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
