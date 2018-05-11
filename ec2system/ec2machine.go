@@ -79,6 +79,9 @@ var Instance = new(System)
 // System implements a bigmachine system for EC2 instances.
 // See package docs for more details.
 type System struct {
+	// OnDemand determines whether to use on-demand or spot instances.
+	OnDemand bool
+
 	// InstanceType is the EC2 instance type to launch in this system.
 	// It defaults to m3.medium.
 	InstanceType string
@@ -238,49 +241,80 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			},
 		})
 	}
-	// TODO(marius): should we use AvailabilityZoneGroup to ensure that
-	// all instances land in the same AZ?
-	params := &ec2.RequestSpotInstancesInput{
-		ValidUntil: aws.Time(time.Now().Add(time.Minute)),
-		SpotPrice:  aws.String(fmt.Sprintf("%.3f", s.config.Price[s.Region])),
-		LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
-			ImageId:             aws.String(s.AMI),
-			EbsOptimized:        aws.Bool(s.config.EBSOptimized),
-			InstanceType:        aws.String(s.config.Name),
-			BlockDeviceMappings: blockDevices,
-			UserData:            aws.String(base64.StdEncoding.EncodeToString(userData)),
+	var instanceId string
+	if s.OnDemand {
+		params := &ec2.RunInstancesInput{
+			ImageId:               aws.String(s.AMI),
+			MaxCount:              aws.Int64(int64(1)),
+			MinCount:              aws.Int64(int64(1)),
+			BlockDeviceMappings:   blockDevices,
+			DisableApiTermination: aws.Bool(false),
+			DryRun:                aws.Bool(false),
+			EbsOptimized:          aws.Bool(s.config.EBSOptimized),
 			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
 				Arn: aws.String(s.InstanceProfile),
 			},
+			InstanceInitiatedShutdownBehavior: aws.String("terminate"),
+			InstanceType:                      aws.String(s.config.Name),
+			Monitoring: &ec2.RunInstancesMonitoringEnabled{
+				Enabled: aws.Bool(true), // Required
+			},
+			UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
 			SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
-		},
-	}
-	resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	if n := len(resp.SpotInstanceRequests); n != 1 {
-		return nil, fmt.Errorf("ec2.RequestSpotInstances: got %d entries, want 1", n)
-	}
-	reqId := aws.StringValue(resp.SpotInstanceRequests[0].SpotInstanceRequestId)
-	if reqId == "" {
-		return nil, fmt.Errorf("ec2.RequestSpotInstances: empty request id")
-	}
-	if err := ec2WaitForSpotFulfillment(ctx, s.ec2, reqId); err != nil {
-		return nil, fmt.Errorf("error while waiting for spot fulfillment: %v", err)
-	}
-	describe, err := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, &ec2.DescribeSpotInstanceRequestsInput{
-		SpotInstanceRequestIds: []*string{aws.String(reqId)},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if n := len(describe.SpotInstanceRequests); n != 1 {
-		return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want 1", n)
-	}
-	instanceId := aws.StringValue(describe.SpotInstanceRequests[0].InstanceId)
-	if instanceId == "" {
-		return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: missing instance ID")
+		}
+		resv, err := s.ec2.RunInstances(params)
+		if err != nil {
+			return nil, err
+		}
+		if n := len(resv.Instances); n != 1 {
+			return nil, fmt.Errorf("expected 1 instance; got %d", n)
+		}
+		instanceId = *resv.Instances[0].InstanceId
+	} else {
+		// TODO(marius): should we use AvailabilityZoneGroup to ensure that
+		// all instances land in the same AZ?
+		params := &ec2.RequestSpotInstancesInput{
+			ValidUntil: aws.Time(time.Now().Add(time.Minute)),
+			SpotPrice:  aws.String(fmt.Sprintf("%.3f", s.config.Price[s.Region])),
+			LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
+				ImageId:             aws.String(s.AMI),
+				EbsOptimized:        aws.Bool(s.config.EBSOptimized),
+				InstanceType:        aws.String(s.config.Name),
+				BlockDeviceMappings: blockDevices,
+				UserData:            aws.String(base64.StdEncoding.EncodeToString(userData)),
+				IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
+					Arn: aws.String(s.InstanceProfile),
+				},
+				SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
+			},
+		}
+		resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		if n := len(resp.SpotInstanceRequests); n != 1 {
+			return nil, fmt.Errorf("ec2.RequestSpotInstances: got %d entries, want 1", n)
+		}
+		reqId := aws.StringValue(resp.SpotInstanceRequests[0].SpotInstanceRequestId)
+		if reqId == "" {
+			return nil, fmt.Errorf("ec2.RequestSpotInstances: empty request id")
+		}
+		if err := ec2WaitForSpotFulfillment(ctx, s.ec2, reqId); err != nil {
+			return nil, fmt.Errorf("error while waiting for spot fulfillment: %v", err)
+		}
+		describe, err := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, &ec2.DescribeSpotInstanceRequestsInput{
+			SpotInstanceRequestIds: []*string{aws.String(reqId)},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if n := len(describe.SpotInstanceRequests); n != 1 {
+			return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want 1", n)
+		}
+		instanceId = aws.StringValue(describe.SpotInstanceRequests[0].InstanceId)
+		if instanceId == "" {
+			return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: missing instance ID")
+		}
 	}
 	// Asynhronously tag the instance so we don't hold up the process.
 	go func() {

@@ -26,6 +26,7 @@ import (
 var (
 	systemFlag   = flag.String("bigm.system", "local", "system on which to run the bigmachine")
 	instanceType = flag.String("bigm.ec2type", "m3.medium", "instance type with which to launch a bigmachine EC2 cluster")
+	ondemand     = flag.Bool("bigm.ec2ondemand", false, "use ec2 on-demand instances instead of spot")
 )
 
 // Start configures a bigmachine System based on the program's flags,
@@ -38,6 +39,7 @@ func Start() *bigmachine.B {
 	case "ec2":
 		sys = &ec2system.System{
 			InstanceType: *instanceType,
+			OnDemand:     *ondemand,
 		}
 	case "local":
 	}
