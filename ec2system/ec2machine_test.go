@@ -17,6 +17,28 @@ import (
 	"golang.org/x/net/http2"
 )
 
+func TestDiskConfig(t *testing.T) {
+	for _, test := range []struct {
+		dataspace uint
+		nslice    int
+		sliceSize int64
+	}{
+		{1000, 5, 214},
+		{5350, 25, 214},
+		{5350 + 25, 25, 215},
+		{6000, 25, 240},
+	} {
+		sys := System{Dataspace: test.dataspace}
+		nslice, sliceSize := sys.sliceConfig()
+		if got, want := nslice, test.nslice; got != want {
+			t.Errorf("%+v: got %v, want %v", test, got, want)
+		}
+		if got, want := sliceSize, test.sliceSize; got != want {
+			t.Errorf("%+v: got %v, want %v", test, got, want)
+		}
+	}
+}
+
 func TestMutualHTTPS(t *testing.T) {
 	// This is a really nasty way of testing what's going on here,
 	// but we do want to test this property end-to-end.

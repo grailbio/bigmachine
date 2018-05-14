@@ -58,7 +58,12 @@ const (
 
 	// 214GiB is the smallest gp2 disk size that attains maximum
 	// possible gp2 throughput.
-	dataVolumeSliceSize = 214
+	minDataVolumeSliceSize = 214
+
+	// The maximum number of EBS volumes an instance can have.
+	// This is really ~40, but we're going to keep it to a-z to maintain
+	// simple naming.
+	maxInstanceDataVolumes = 25
 )
 
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
@@ -226,7 +231,7 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			},
 		},
 	}
-	nslice := s.numDataSlices()
+	nslice, sliceSize := s.sliceConfig()
 	for i := 0; i < nslice; i++ {
 		blockDevices = append(blockDevices, &ec2.BlockDeviceMapping{
 			// Device names are ignored for NVMe devices; they may be
@@ -236,7 +241,7 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			DeviceName: aws.String(fmt.Sprintf("/dev/xvd%c", 'b'+i)),
 			Ebs: &ec2.EbsBlockDevice{
 				DeleteOnTermination: aws.Bool(true),
-				VolumeSize:          aws.Int64(dataVolumeSliceSize),
+				VolumeSize:          aws.Int64(sliceSize),
 				VolumeType:          aws.String("gp2"),
 			},
 		})
@@ -364,8 +369,15 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 	return m, nil
 }
 
-func (s *System) numDataSlices() int {
-	return int((s.Dataspace + dataVolumeSliceSize - 1) / dataVolumeSliceSize)
+func (s *System) sliceConfig() (nslice int, sliceSize int64) {
+	sliceSize = minDataVolumeSliceSize
+	nslice = int((int64(s.Dataspace) + sliceSize - 1) / sliceSize)
+	if nslice <= maxInstanceDataVolumes {
+		return
+	}
+	nslice = maxInstanceDataVolumes
+	sliceSize = int64(s.Dataspace) / int64(nslice)
+	return
 }
 
 // CloudConfig returns the cloudConfig instance as configured by the current system.
@@ -380,7 +392,7 @@ func (s *System) cloudConfig() *cloudConfig {
 	c.AppendUnit(cloudUnit{Name: "update-engine.service", Command: "stop"})
 	c.AppendUnit(cloudUnit{Name: "locksmithd.service", Command: "stop"})
 	var dataDeviceName string
-	switch nslice := s.numDataSlices(); nslice {
+	switch nslice, _ := s.sliceConfig(); nslice {
 	case 0:
 	case 1:
 		// No need to set up striping in this case.
