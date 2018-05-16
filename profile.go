@@ -56,6 +56,7 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			} else {
 				if err := m.Call(ctx, "Supervisor.Profile", profileRequest{p.which, debug}, &rc); err != nil {
 					log.Error.Printf("failed to collect profile from %s: %v", m.Addr, err)
+					return nil
 				}
 			}
 			defer rc.Close()
