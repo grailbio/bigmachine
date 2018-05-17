@@ -6,6 +6,7 @@ package bigmachine
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -30,11 +31,38 @@ type profileHandler struct {
 }
 
 func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	sec, _ := strconv.ParseInt(r.FormValue("seconds"), 10, 64)
+	sec64, _ := strconv.ParseInt(r.FormValue("seconds"), 10, 64)
+	sec := int(sec64)
 	if sec == 0 {
 		sec = 30
 	}
 	debug, _ := strconv.Atoi(r.FormValue("debug"))
+	// If a machine is specified, we pass through the profile directly.
+	if addr := r.FormValue("machine"); addr != "" {
+		ctx := r.Context()
+		m, err := p.b.Dial(ctx, addr)
+		if err != nil {
+			profileErrorf(w, http.StatusInternalServerError, "failed to dial machine: %v", err)
+			return
+		}
+		rc, err := getProfile(ctx, m, p.which, sec, debug)
+		if err != nil {
+			profileErrorf(w, http.StatusInternalServerError, "failed to collect %s profile: %v", p.which, err)
+			return
+		}
+		defer rc.Close()
+		if debug > 0 && p.which != "profile" {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		} else {
+			w.Header().Set("Content-Type", "application/octet-stream")
+		}
+		_, err = io.Copy(w, rc)
+		if err != nil {
+			profileErrorf(w, http.StatusInternalServerError, "failed to write %s profile: %v", p.which, err)
+		}
+		return
+	}
+
 	g, ctx := errgroup.WithContext(r.Context())
 	var (
 		mu       sync.Mutex
@@ -47,17 +75,10 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		m := m
 		g.Go(func() error {
-			var rc io.ReadCloser
-			if p.which == "profile" {
-				if err := m.Call(ctx, "Supervisor.CPUProfile", time.Duration(sec)*time.Second, &rc); err != nil {
-					log.Error.Printf("failed to collect profile from %s: %v", m.Addr, err)
-					return nil
-				}
-			} else {
-				if err := m.Call(ctx, "Supervisor.Profile", profileRequest{p.which, debug}, &rc); err != nil {
-					log.Error.Printf("failed to collect profile from %s: %v", m.Addr, err)
-					return nil
-				}
+			rc, err := getProfile(ctx, m, p.which, sec, debug)
+			if err != nil {
+				log.Error.Printf("failed to collect profile %s from %s: %v", p.which, m.Addr, err)
+				return nil
 			}
 			defer rc.Close()
 			b, err := ioutil.ReadAll(rc)
@@ -112,6 +133,15 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := prof.Write(w); err != nil {
 		profileErrorf(w, http.StatusInternalServerError, "failed to write profile: %v", err)
 	}
+}
+
+func getProfile(ctx context.Context, m *Machine, which string, sec, debug int) (rc io.ReadCloser, err error) {
+	if which == "profile" {
+		err = m.Call(ctx, "Supervisor.CPUProfile", time.Duration(sec)*time.Second, &rc)
+	} else {
+		err = m.Call(ctx, "Supervisor.Profile", profileRequest{which, debug}, &rc)
+	}
+	return
 }
 
 func profileErrorf(w http.ResponseWriter, code int, message string, args ...interface{}) {

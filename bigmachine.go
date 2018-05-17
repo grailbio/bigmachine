@@ -216,14 +216,27 @@ var indexTmpl = template.Must(template.New("index").Parse(`<html>
 </head>
 <body>
 /debug/bigmachine/pprof<br>
-profiles:<br>
+merged:<br>
 <table>
-{{range .}}
+{{range .All}}
 <tr><td align=right>{{.Count}}<td><a href="{{.Name}}?debug=1">{{.Name}}</a>
 {{end}}
 </table>
 <br>
 <a href="goroutine?debug=2">full goroutine stack dump</a>
+<br><br>
+{{range $mach, $stats := .Machines}}
+{{$mach}}:<br>
+<table>
+{{range $stats}}
+<tr><td align=right>{{.Count}}<td><a href="{{.Name}}?debug=1&machine={{$mach}}">{{.Name}}</a>
+{{end}}
+</table>
+<br>
+<a href="goroutine?debug=2&machine={{$mach}}">full goroutine stack dump</a>
+<br><br>
+{{end}}
+
 </body>
 </html>
 `))
@@ -237,11 +250,12 @@ func (b *B) pprofIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		stats  = make(map[string]profileStat)
-		g, ctx = errgroup.WithContext(r.Context())
-		mu     sync.Mutex
+		stats    = make(map[string][]profileStat)
+		g, ctx   = errgroup.WithContext(r.Context())
+		mu       sync.Mutex
+		machines = b.Machines()
 	)
-	for _, m := range b.Machines() {
+	for _, m := range machines {
 		m := m
 		g.Go(func() error {
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -252,12 +266,7 @@ func (b *B) pprofIndex(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 			mu.Lock()
-			for _, p := range mstats {
-				stats[p.Name] = profileStat{
-					Name:  p.Name,
-					Count: stats[p.Name].Count + p.Count,
-				}
-			}
+			stats[m.Addr] = mstats
 			mu.Unlock()
 			return nil
 		})
@@ -266,12 +275,27 @@ func (b *B) pprofIndex(w http.ResponseWriter, r *http.Request) {
 		profileErrorf(w, 500, "error fetching profiles: %v", err)
 		return
 	}
-	all := make([]profileStat, 0, len(stats))
-	for _, p := range stats {
+
+	aggregate := make(map[string]profileStat)
+	for _, mstats := range stats {
+		for _, p := range mstats {
+			aggregate[p.Name] = profileStat{
+				Name:  p.Name,
+				Count: aggregate[p.Name].Count + p.Count,
+			}
+		}
+	}
+
+	all := make([]profileStat, 0, len(aggregate))
+	for _, p := range aggregate {
 		all = append(all, p)
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
-	if err := indexTmpl.Execute(w, all); err != nil {
+	err := indexTmpl.Execute(w, map[string]interface{}{
+		"All":      all,
+		"Machines": stats,
+	})
+	if err != nil {
 		log.Error.Print(err)
 	}
 }
