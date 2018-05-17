@@ -329,9 +329,9 @@ func (m *Machine) loop() {
 			}
 		}(fd)
 	}
-	const keepalive = 2 * time.Minute
+	const keepalive = 5 * time.Minute
 	for {
-		retryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		retryCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		var next time.Duration
 		err := m.retryCall(retryCtx, retryPolicy, "Supervisor.Keepalive", keepalive, &next)
 		cancel()
@@ -339,8 +339,8 @@ func (m *Machine) loop() {
 			m.errorf("keepalive failed: %v", err)
 			return
 		}
-		if next > 10*time.Second {
-			next = 10 * time.Second
+		if next > time.Minute {
+			next = time.Minute
 		}
 		nextc := time.After(next / 2)
 

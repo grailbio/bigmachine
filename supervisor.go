@@ -304,7 +304,13 @@ func (s *Supervisor) Profiles(ctx context.Context, _ struct{}, profiles *[]profi
 // the accepted time is returned. In order to maintain the keepalive,
 // the driver should call Keepalive again before replynext expires.
 func (s *Supervisor) Keepalive(ctx context.Context, next time.Duration, replynext *time.Duration) error {
-	t := time.Now().Add(next)
+	now := time.Now()
+	defer func() {
+		if diff := time.Since(now); diff > 200*time.Millisecond {
+			log.Error.Printf("supervisor took a long time to reply to keepalive (%s)", diff)
+		}
+	}()
+	t := now.Add(next)
 	select {
 	case s.nextc <- t:
 		*replynext = time.Until(t)

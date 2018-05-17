@@ -55,7 +55,7 @@ import (
 
 const (
 	port                 = 2000
-	maxConcurrentStreams = 2000
+	maxConcurrentStreams = 20000
 	authorityPath        = "/tmp/bigmachine.pem"
 
 	// 214GiB is the smallest gp2 disk size that attains maximum
