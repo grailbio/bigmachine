@@ -138,6 +138,12 @@ type Machine struct {
 	cancelers map[canceler]struct{}
 }
 
+// Owned tells whether this machine was created and is managed
+// by this bigmachine instance.
+func (m *Machine) Owned() bool {
+	return m.owner
+}
+
 // State returns the machine's current state.
 func (m *Machine) State() State {
 	return State(atomic.LoadInt64(&m.state))

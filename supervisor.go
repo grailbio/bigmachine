@@ -7,6 +7,8 @@ package bigmachine
 import (
 	"context"
 	"crypto"
+	"encoding/json"
+	"expvar"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -310,6 +312,37 @@ func (s *Supervisor) Keepalive(ctx context.Context, next time.Duration, replynex
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// An Expvar is a snapshot of an expvar.
+type Expvar struct {
+	Key   string
+	Value string
+}
+
+// Expvars is a collection of snapshotted expvars.
+type Expvars []Expvar
+
+type jsonString string
+
+func (s jsonString) MarshalJSON() ([]byte, error) {
+	return []byte(s), nil
+}
+
+func (e Expvars) MarshalJSON() ([]byte, error) {
+	m := make(map[string]jsonString)
+	for _, v := range e {
+		m[v.Key] = jsonString(v.Value)
+	}
+	return json.Marshal(m)
+}
+
+// Expvars returns a snapshot of this machine's expvars.
+func (s *Supervisor) Expvars(ctx context.Context, _ struct{}, vars *Expvars) error {
+	expvar.Do(func(kv expvar.KeyValue) {
+		*vars = append(*vars, Expvar{kv.Key, kv.Value.String()})
+	})
+	return nil
 }
 
 func (s *Supervisor) watchdog() {

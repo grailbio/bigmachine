@@ -53,6 +53,7 @@ var statusTemplate = template.Must(template.New("status").
 		(percent):	{{printf "%.1f%%" .mem.System.UsedPercent}}
 		available:	{{human .mem.System.Available}}
 		runtime:	{{human .mem.Runtime.Sys}}
+		(alloc):	{{human .mem.Runtime.Alloc}}
 	runtime:
 		uptime:	{{.uptime}}
 		pausetime:	{{ns .mem.Runtime.PauseTotalNs}}

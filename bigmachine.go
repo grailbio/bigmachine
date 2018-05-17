@@ -6,6 +6,7 @@ package bigmachine
 
 import (
 	"context"
+	"expvar"
 	"html/template"
 	"net/http"
 	"sort"
@@ -58,6 +59,11 @@ func Start(system System) *B {
 		machines: make(map[string]*Machine),
 	}
 	b.run()
+	// Test systems run in a single process space and thus
+	// expvar would panic with duplicate key errors.
+	if system.Name() != "testsystem" {
+		expvar.Publish("machines", &machineVars{b})
+	}
 	return b
 }
 
