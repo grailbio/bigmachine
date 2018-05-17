@@ -7,9 +7,11 @@ package bigmachine
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"runtime"
 	"sync"
@@ -142,6 +144,19 @@ type Machine struct {
 // by this bigmachine instance.
 func (m *Machine) Owned() bool {
 	return m.owner
+}
+
+// Hostname returns the hostname portion of the machine's address.
+func (m *Machine) Hostname() string {
+	u, err := url.Parse(m.Addr)
+	if err != nil {
+		return "unknown"
+	}
+	host, _, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return u.Host
+	}
+	return host
 }
 
 // State returns the machine's current state.
@@ -286,12 +301,13 @@ func (m *Machine) loop() {
 		}
 	}
 
-	// If we're the owner, there's a bunch of additional setup to peform:
+	// If we're the owner, there's a bunch of additional setup to perform:
 	//
 	//	(1) instantiate the machine's services
 	//	(2) duplicate the machine's standard output and error to our own
 	//	(3) maintain a keepalive
-
+	//	(4) query VM stats and take emergency pre-OOM heap profiles
+	//		if we're on the verge of OOMing
 	for name, iface := range m.services {
 		if err := m.call(ctx, "Supervisor.Register", service{name, iface}, nil); err != nil {
 			m.setError(errors.E(err, fmt.Sprintf("Supervisor.Register %s", name)))
@@ -309,11 +325,12 @@ func (m *Machine) loop() {
 			}
 		}(fd)
 	}
-	const keepalive = time.Minute
+	const keepalive = 2 * time.Minute
 	for {
 		retryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		var next time.Duration
-		err := m.retryCall(retryCtx, newBackoffRetrier(time.Second, 1), "Supervisor.Keepalive", keepalive, &next)
+		err := m.retryCall(retryCtx, newBackoffRetrier(time.Second, 1),
+			"Supervisor.Keepalive", keepalive, &next)
 		cancel()
 		if err != nil {
 			m.errorf("keepalive failed: %v", err)
@@ -322,8 +339,36 @@ func (m *Machine) loop() {
 		if next > 10*time.Second {
 			next = 10 * time.Second
 		}
+		nextc := time.After(next / 2)
+
+		// Check memory stats and take a heap profile if we're about to OOM.
+		//
+		// TODO(marius): rate limit, collect, or rotate these?
+		timeoutctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		var meminfo MemInfo
+		err = m.Call(timeoutctx, "Supervisor.MemInfo", struct{}{}, &meminfo)
+		cancel()
+		if err != nil {
+			log.Error.Printf("%s: failed to retrieve meminfo: %v", m.Addr, err)
+		} else if used := meminfo.System.UsedPercent; used > 95 {
+			log.Printf("%s: low system memory (used %.1f), taking heap profile and dumping stats", m.Addr, used)
+			suffix := "." + m.Hostname() + "-" + time.Now().Format("20060102T150405")
+			path := "heap" + suffix
+			if err := m.saveProfile(ctx, "heap", path); err != nil {
+				log.Error.Printf("%s: heap profile failed: %v", m.Addr, err)
+			} else {
+				log.Printf("%s: heap profile saved to %s", m.Addr, path)
+			}
+			path = "vars" + suffix
+			if err = m.saveExpvars(ctx, path); err != nil {
+				log.Error.Printf("%s: failed to retrieve expvars: %v", m.Addr, err)
+			} else {
+				log.Printf("%s: expvars saved to %s", m.Addr, path)
+			}
+		}
+
 		select {
-		case <-time.After(next / 2):
+		case <-nextc:
 		case <-ctx.Done():
 			m.setError(ctx.Err())
 			return
@@ -458,6 +503,43 @@ func (m *Machine) Call(ctx context.Context, serviceMethod string, arg, reply int
 			}
 		}
 	}
+}
+
+// SaveProfile saves a profile to a local file. The name of the file is
+// returned.
+func (m *Machine) saveProfile(ctx context.Context, which, path string) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	var rc io.ReadCloser
+	err := m.Call(ctx, "Supervisor.Profile", profileRequest{which, 0}, &rc)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, rc)
+	return err
+}
+
+// SaveExpvars saves a JSON-encoded snapshot of this machine's
+// expvars to the provided path.
+func (m *Machine) saveExpvars(ctx context.Context, path string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var vars Expvars
+	if err := m.Call(ctx, "Supervisor.Expvars", struct{}{}, &vars); err != nil {
+		return err
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return json.NewEncoder(f).Encode(vars)
 }
 
 // A retrier is an interface to abstract retry logic. It should be
