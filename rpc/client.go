@@ -48,6 +48,13 @@ func NewClient(client *http.Client, prefix string) (*Client, error) {
 // an error occurs while the response is streamed, the returned
 // io.ReadCloser errors on read.
 func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, reply interface{}) (err error) {
+	done := clientstats.Start(addr, serviceMethod)
+	defer func() {
+		if err == nil {
+			// Only register successful replies (currently).
+			done()
+		}
+	}()
 	url := strings.TrimRight(addr, "/") + c.prefix + serviceMethod
 	if log.At(log.Debug) {
 		log.Debug.Printf("call %s %s %v", addr, serviceMethod, arg)

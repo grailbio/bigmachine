@@ -200,6 +200,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+	defer serverstats.Start("", service+"."+method)()
+
 	// Read the request.
 	var argv reflect.Value
 	if m.arg == typeOfReader {
