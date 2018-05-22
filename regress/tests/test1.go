@@ -27,12 +27,13 @@ func main() {
 	b := bigmachine.Start(bigmachine.Local)
 	defer b.Shutdown()
 	ctx := context.Background()
-	m, err := b.Start(ctx, bigmachine.Services{
+	machines, err := b.Start(ctx, 1, bigmachine.Services{
 		"Service": service{},
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
+	m := machines[0]
 	<-m.Wait(bigmachine.Running)
 	const str = "hello world"
 	var n int

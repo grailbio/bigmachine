@@ -155,45 +155,36 @@ func (s Services) applyParam(m *Machine) {
 	}
 }
 
-// Start launches a new machine and returns it. The machine is
+// Start launches up to n new machines and returns them. The machines are
 // configured according to the provided parameters. Each machine must
 // have at least one service exported, or else Start returns an
-// error. The new machine may be in Starting state when it is
-// returned. Start maintains a keepalive to the returned machine,
-// thus tying the machine's lifetime with the caller process.
-func (b *B) Start(ctx context.Context, params ...Param) (*Machine, error) {
-	m, err := b.system.Start(ctx)
+// error. The new machines may be in Starting state when they are
+// returned. Start maintains a keepalive to the returned machines,
+// thus tying the machines' lifetime with the caller process.
+//
+// Start returns at least one machine, or else an error.
+func (b *B) Start(ctx context.Context, n int, params ...Param) ([]*Machine, error) {
+	machines, err := b.system.Start(ctx, n)
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range params {
-		p.applyParam(m)
+	if len(machines) == 0 {
+		return nil, errors.E(errors.Unavailable, "no machines started")
 	}
-	if len(m.services) == 0 {
-		return nil, errors.E(errors.Invalid, "no services provided")
-	}
-	m.owner = true
-	m.start(b)
 	b.mu.Lock()
-	b.machines[m.Addr] = m
-	b.mu.Unlock()
-	return m, nil
-}
-
-// StartN starts multiple machines simultaneously using the same set
-// of parameters. See Start for details.
-func (b *B) StartN(ctx context.Context, n int, params ...Param) ([]*Machine, error) {
-	g, ctx := errgroup.WithContext(ctx)
-	machines := make([]*Machine, n)
-	for i := range machines {
-		i := i
-		g.Go(func() error {
-			var err error
-			machines[i], err = b.Start(ctx, params...)
-			return err
-		})
+	defer b.mu.Unlock()
+	for _, m := range machines {
+		for _, p := range params {
+			p.applyParam(m)
+		}
+		if len(m.services) == 0 {
+			return nil, errors.E(errors.Invalid, "no services provided")
+		}
+		m.owner = true
+		m.start(b)
+		b.machines[m.Addr] = m
 	}
-	return machines, g.Wait()
+	return machines, nil
 }
 
 // Machines returns a snapshot of the current set machines known to this B.

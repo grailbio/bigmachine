@@ -84,17 +84,21 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 // behavior of a supervisor of a test machine and a regular machine
 // is that the test machine supervisor does not exec the process, as
 // this would break testing.
-func (s *System) Start(context.Context) (*bigmachine.Machine, error) {
-	server := rpc.NewServer()
-	server.Register("Supervisor", bigmachine.StartSupervisor(s.b, s, server, false))
-	index := atomic.AddUint64(&s.index, 1)
-	path := "/" + fmt.Sprint(index)
-	s.mux.Handle(path+bigmachine.RpcPrefix, server)
-	return &bigmachine.Machine{
-		Addr:     s.server.URL + path,
-		Maxprocs: 1,
-		NoExec:   true,
-	}, nil
+func (s *System) Start(_ context.Context, count int) ([]*bigmachine.Machine, error) {
+	machines := make([]*bigmachine.Machine, count)
+	for i := range machines {
+		server := rpc.NewServer()
+		server.Register("Supervisor", bigmachine.StartSupervisor(s.b, s, server, false))
+		index := atomic.AddUint64(&s.index, 1)
+		path := "/" + fmt.Sprint(index)
+		s.mux.Handle(path+bigmachine.RpcPrefix, server)
+		machines[i] = &bigmachine.Machine{
+			Addr:     s.server.URL + path,
+			Maxprocs: 1,
+			NoExec:   true,
+		}
+	}
+	return machines, nil
 }
 
 // Exit marks the system as exited.

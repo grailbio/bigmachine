@@ -30,12 +30,13 @@ func TestTestSystem(t *testing.T) {
 	b := bigmachine.Start(test)
 	defer b.Shutdown()
 	ctx := context.Background()
-	m, err := b.Start(ctx, bigmachine.Services{
+	machines, err := b.Start(ctx, 1, bigmachine.Services{
 		"Service": &testService{Index: 1},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := machines[0]
 	<-m.Wait(bigmachine.Running)
 	var reply int
 	if err := m.Call(ctx, "Service.Method", 0, &reply); err != nil {

@@ -134,7 +134,7 @@ func main() {
 	services := bigmachine.Services{
 		"PI": circlePI{},
 	}
-	machines, err := b.StartN(ctx, *nmachine, services)
+	machines, err := b.Start(ctx, *nmachine, services)
 	if err != nil {
 		log.Fatal(err)
 	}

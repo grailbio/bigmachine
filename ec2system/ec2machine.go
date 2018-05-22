@@ -221,7 +221,7 @@ func (s *System) Init(b *bigmachine.B) error {
 // type. After the instance is launched, Start asynchronously tags it
 // with the bigmachine command line and binary, as well as other
 // runtime information.
-func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
+func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, error) {
 	userData, err := s.cloudConfig().Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cloud-config: %v", err)
@@ -251,11 +251,11 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			},
 		})
 	}
-	var run func() (string, error)
+	var run func() ([]string, error)
 	if s.OnDemand {
 		params := &ec2.RunInstancesInput{
 			ImageId:               aws.String(s.AMI),
-			MaxCount:              aws.Int64(int64(1)),
+			MaxCount:              aws.Int64(int64(count)),
 			MinCount:              aws.Int64(int64(1)),
 			BlockDeviceMappings:   blockDevices,
 			DisableApiTermination: aws.Bool(false),
@@ -272,22 +272,27 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
 			SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
 		}
-		run = func() (string, error) {
+		run = func() ([]string, error) {
 			resv, err := s.ec2.RunInstances(params)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
-			if n := len(resv.Instances); n != 1 {
-				return "", fmt.Errorf("expected 1 instance; got %d", n)
+			if len(resv.Instances) == 0 {
+				return nil, errors.E(errors.Invalid, "expected at least 1 instance")
 			}
-			return *resv.Instances[0].InstanceId, nil
+			ids := make([]string, len(resv.Instances))
+			for i := range ids {
+				ids[i] = *resv.Instances[i].InstanceId
+			}
+			return ids, nil
 		}
 	} else {
 		// TODO(marius): should we use AvailabilityZoneGroup to ensure that
 		// all instances land in the same AZ?
 		params := &ec2.RequestSpotInstancesInput{
-			ValidUntil: aws.Time(time.Now().Add(time.Minute)),
-			SpotPrice:  aws.String(fmt.Sprintf("%.3f", s.config.Price[s.Region])),
+			ValidUntil:    aws.Time(time.Now().Add(time.Minute)),
+			SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[s.Region])),
+			InstanceCount: aws.Int64(int64(count)),
 			LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
 				ImageId:             aws.String(s.AMI),
 				EbsOptimized:        aws.Bool(s.config.EBSOptimized),
@@ -300,44 +305,45 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 				SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
 			},
 		}
-		run = func() (string, error) {
+		run = func() ([]string, error) {
 			resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, params)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
-			if n := len(resp.SpotInstanceRequests); n != 1 {
-				return "", fmt.Errorf("ec2.RequestSpotInstances: got %d entries, want 1", n)
+			if len(resp.SpotInstanceRequests) == 0 {
+				return nil, errors.E(errors.Invalid, "ec2.RequestSpotInstances: got 0 entries")
 			}
-			reqId := aws.StringValue(resp.SpotInstanceRequests[0].SpotInstanceRequestId)
-			if reqId == "" {
-				return "", fmt.Errorf("ec2.RequestSpotInstances: empty request id")
+			n := len(resp.SpotInstanceRequests)
+			describeInput := &ec2.DescribeSpotInstanceRequestsInput{
+				SpotInstanceRequestIds: make([]*string, n),
 			}
-			if err := ec2WaitForSpotFulfillment(ctx, s.ec2, reqId); err != nil {
-				return "", fmt.Errorf("error while waiting for spot fulfillment: %v", err)
+			for i := range describeInput.SpotInstanceRequestIds {
+				describeInput.SpotInstanceRequestIds[i] = resp.SpotInstanceRequests[i].SpotInstanceRequestId
 			}
-			describe, err := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, &ec2.DescribeSpotInstanceRequestsInput{
-				SpotInstanceRequestIds: []*string{aws.String(reqId)},
-			})
+			if err := s.ec2.WaitUntilSpotInstanceRequestFulfilledWithContext(ctx, describeInput); err != nil {
+				return nil, err
+			}
+			describe, err := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, describeInput)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
-			if n := len(describe.SpotInstanceRequests); n != 1 {
-				return "", fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want 1", n)
+			if got, want := n, len(describeInput.SpotInstanceRequestIds); got != want {
+				return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want %d", got, want)
 			}
-			instanceId := aws.StringValue(describe.SpotInstanceRequests[0].InstanceId)
-			if instanceId == "" {
-				return "", fmt.Errorf("ec2.DescribeSpotInstanceRequests: missing instance ID")
+			instanceIds := make([]string, n)
+			for i := range instanceIds {
+				instanceIds[i] = aws.StringValue(describe.SpotInstanceRequests[i].InstanceId)
 			}
-			return instanceId, nil
+			return instanceIds, nil
 		}
 	}
 
 	// TODO(marius): use fine-grained error handling in the case of spot instances.
 	// TODO(marius): we can also avoid common cases of RequestLimitExceeded by pushing
 	// instance count into this API.
-	var instanceId string
+	var instanceIds []string
 	for retries := 0; err == nil; retries++ {
-		instanceId, err = run()
+		instanceIds, err = run()
 		if err == nil {
 			break
 		}
@@ -350,6 +356,10 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 	if err != nil {
 		return nil, err
 	}
+	instanceIdsp := make([]*string, len(instanceIds))
+	for i := range instanceIdsp {
+		instanceIdsp[i] = aws.String(instanceIds[i])
+	}
 
 	// Asynhronously tag the instance so we don't hold up the process.
 	go func() {
@@ -361,7 +371,7 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			tag    = fmt.Sprintf("%s(%s) %s (bigmachine)", binary, info.Digest.Short(), strings.Join(os.Args[1:], " "))
 		)
 		_, err := s.ec2.CreateTags(&ec2.CreateTagsInput{
-			Resources: []*string{aws.String(instanceId)},
+			Resources: instanceIdsp,
 			Tags: []*ec2.Tag{
 				{Key: aws.String("Name"), Value: aws.String(tag)},
 				{Key: aws.String("GOARCH"), Value: aws.String(info.Goarch)},
@@ -374,30 +384,40 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 		}
 	}()
 	// TODO(marius): custom WaitUntilInstanceRunningWithContext that's more aggressive
-	err = s.ec2.WaitUntilInstanceRunningWithContext(ctx, &ec2.DescribeInstancesInput{
-		InstanceIds: []*string{aws.String(instanceId)},
-	})
+	describeInput := &ec2.DescribeInstancesInput{
+		InstanceIds: instanceIdsp,
+	}
+	if err := s.ec2.WaitUntilInstanceRunningWithContext(ctx, describeInput); err != nil {
+		log.Error.Printf("WaitUntilInstanceRunning: %v", err)
+		describeInstance, err := s.ec2.DescribeInstancesWithContext(ctx, describeInput)
+		if err != nil {
+			return nil, err
+		}
+		for _, reserv := range describeInstance.Reservations {
+			for _, inst := range reserv.Instances {
+				log.Printf("instance %s: %s", aws.StringValue(inst.InstanceId), inst.State)
+			}
+		}
+
+		return nil, err
+	}
+	describeInstance, err := s.ec2.DescribeInstancesWithContext(ctx, describeInput)
 	if err != nil {
 		return nil, err
 	}
-	describeInstance, err := s.ec2.DescribeInstances(&ec2.DescribeInstancesInput{
-		InstanceIds: []*string{aws.String(instanceId)},
-	})
-	if err != nil {
-		log.Error.Printf("DescribeInstances error: %v", err)
-		return nil, err
+	if len(describeInstance.Reservations) != 1 || len(describeInstance.Reservations[0].Instances) != len(instanceIds) {
+		return nil, errors.E(errors.Invalid, "ec2.DescribeInstancesinvalid output")
 	}
-	if len(describeInstance.Reservations) != 1 || len(describeInstance.Reservations[0].Instances) != 1 {
-		return nil, fmt.Errorf("ec2.DescribeInstances %v: invalid output", instanceId)
+	machines := make([]*bigmachine.Machine, len(instanceIds))
+	for i, instance := range describeInstance.Reservations[0].Instances {
+		if instance.PublicDnsName == nil || *instance.PublicDnsName == "" {
+			return nil, fmt.Errorf("ec2.DescribeInstances %s[%d]: no public DNS name", aws.StringValue(instance.InstanceId), i)
+		}
+		machines[i] = new(bigmachine.Machine)
+		machines[i].Addr = fmt.Sprintf("https://%s:%d/", *instance.PublicDnsName, port)
+		machines[i].Maxprocs = int(s.config.VCPU)
 	}
-	instance := describeInstance.Reservations[0].Instances[0]
-	if instance.PublicDnsName == nil || *instance.PublicDnsName == "" {
-		return nil, fmt.Errorf("ec2.DescribeInstances %s: no public DNS name", instanceId)
-	}
-	m := new(bigmachine.Machine)
-	m.Addr = fmt.Sprintf("https://%s:%d/", *instance.PublicDnsName, port)
-	m.Maxprocs = int(s.config.VCPU)
-	return m, nil
+	return machines, nil
 }
 
 func (s *System) sliceConfig() (nslice int, sliceSize int64) {

@@ -32,21 +32,25 @@ func (localSystem) Name() string {
 	return "local"
 }
 
-func (localSystem) Start(ctx context.Context) (*Machine, error) {
-	cmd := exec.Command(os.Args[0], os.Args[1:]...)
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
-	port, err := getFreeTCPPort()
-	if err != nil {
-		return nil, err
-	}
-	cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=:%d", port))
+func (localSystem) Start(ctx context.Context, count int) ([]*Machine, error) {
+	machines := make([]*Machine, count)
+	for i := range machines {
+		cmd := exec.Command(os.Args[0], os.Args[1:]...)
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
+		port, err := getFreeTCPPort()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=:%d", port))
 
-	m := new(Machine)
-	m.Addr = fmt.Sprintf("http://localhost:%d/", port)
-	m.Maxprocs = 1
-	err = cmd.Start()
-	if err == nil {
+		m := new(Machine)
+		m.Addr = fmt.Sprintf("http://localhost:%d/", port)
+		m.Maxprocs = 1
+		err = cmd.Start()
+		if err != nil {
+			return nil, err
+		}
 		go func() {
 			if err := cmd.Wait(); err != nil {
 				log.Printf("machine %s terminated with error: %v", m.Addr, err)
@@ -54,8 +58,9 @@ func (localSystem) Start(ctx context.Context) (*Machine, error) {
 				log.Printf("machine %s terminated", m.Addr)
 			}
 		}()
+		machines[i] = m
 	}
-	return m, err
+	return machines, nil
 }
 
 func (localSystem) Main() error {

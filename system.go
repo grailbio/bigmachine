@@ -33,9 +33,9 @@ type System interface {
 	// is reachable from other instances in the bigmachine cluster. If addr
 	// is the empty string, the default cluster address is used.
 	ListenAndServe(addr string, handle http.Handler) error
-	// Start launches a new machine. The returned machine can be in
-	// Unstarted state, but should eventually become available.
-	Start(context.Context) (*Machine, error)
+	// Start launches up to n new machines.  The returned machines can
+	// be in Unstarted state, but should eventually become available.
+	Start(ctx context.Context, n int) ([]*Machine, error)
 	// Exit is called to terminate a machine with the provided exit code.
 	Exit(int)
 	// Shutdown is called on graceful driver exit. It's should be used to
