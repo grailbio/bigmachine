@@ -41,11 +41,13 @@ import (
 	"unicode"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
+	"github.com/grailbio/base/retry"
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/ec2system/instances"
 	"golang.org/x/net/http2"
@@ -65,6 +67,9 @@ const (
 	// simple naming.
 	maxInstanceDataVolumes = 25
 )
+
+// RetryPolicy is used for EC2 calls.
+var retryPolicy = retry.Backoff(time.Second, 10*time.Second, 2)
 
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
 
@@ -246,7 +251,7 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			},
 		})
 	}
-	var instanceId string
+	var run func() (string, error)
 	if s.OnDemand {
 		params := &ec2.RunInstancesInput{
 			ImageId:               aws.String(s.AMI),
@@ -267,14 +272,16 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 			UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
 			SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
 		}
-		resv, err := s.ec2.RunInstances(params)
-		if err != nil {
-			return nil, err
+		run = func() (string, error) {
+			resv, err := s.ec2.RunInstances(params)
+			if err != nil {
+				return "", err
+			}
+			if n := len(resv.Instances); n != 1 {
+				return "", fmt.Errorf("expected 1 instance; got %d", n)
+			}
+			return *resv.Instances[0].InstanceId, nil
 		}
-		if n := len(resv.Instances); n != 1 {
-			return nil, fmt.Errorf("expected 1 instance; got %d", n)
-		}
-		instanceId = *resv.Instances[0].InstanceId
 	} else {
 		// TODO(marius): should we use AvailabilityZoneGroup to ensure that
 		// all instances land in the same AZ?
@@ -293,34 +300,57 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 				SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
 			},
 		}
-		resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, params)
-		if err != nil {
-			return nil, err
-		}
-		if n := len(resp.SpotInstanceRequests); n != 1 {
-			return nil, fmt.Errorf("ec2.RequestSpotInstances: got %d entries, want 1", n)
-		}
-		reqId := aws.StringValue(resp.SpotInstanceRequests[0].SpotInstanceRequestId)
-		if reqId == "" {
-			return nil, fmt.Errorf("ec2.RequestSpotInstances: empty request id")
-		}
-		if err := ec2WaitForSpotFulfillment(ctx, s.ec2, reqId); err != nil {
-			return nil, fmt.Errorf("error while waiting for spot fulfillment: %v", err)
-		}
-		describe, err := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, &ec2.DescribeSpotInstanceRequestsInput{
-			SpotInstanceRequestIds: []*string{aws.String(reqId)},
-		})
-		if err != nil {
-			return nil, err
-		}
-		if n := len(describe.SpotInstanceRequests); n != 1 {
-			return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want 1", n)
-		}
-		instanceId = aws.StringValue(describe.SpotInstanceRequests[0].InstanceId)
-		if instanceId == "" {
-			return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: missing instance ID")
+		run = func() (string, error) {
+			resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, params)
+			if err != nil {
+				return "", err
+			}
+			if n := len(resp.SpotInstanceRequests); n != 1 {
+				return "", fmt.Errorf("ec2.RequestSpotInstances: got %d entries, want 1", n)
+			}
+			reqId := aws.StringValue(resp.SpotInstanceRequests[0].SpotInstanceRequestId)
+			if reqId == "" {
+				return "", fmt.Errorf("ec2.RequestSpotInstances: empty request id")
+			}
+			if err := ec2WaitForSpotFulfillment(ctx, s.ec2, reqId); err != nil {
+				return "", fmt.Errorf("error while waiting for spot fulfillment: %v", err)
+			}
+			describe, err := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, &ec2.DescribeSpotInstanceRequestsInput{
+				SpotInstanceRequestIds: []*string{aws.String(reqId)},
+			})
+			if err != nil {
+				return "", err
+			}
+			if n := len(describe.SpotInstanceRequests); n != 1 {
+				return "", fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want 1", n)
+			}
+			instanceId := aws.StringValue(describe.SpotInstanceRequests[0].InstanceId)
+			if instanceId == "" {
+				return "", fmt.Errorf("ec2.DescribeSpotInstanceRequests: missing instance ID")
+			}
+			return instanceId, nil
 		}
 	}
+
+	// TODO(marius): use fine-grained error handling in the case of spot instances.
+	// TODO(marius): we can also avoid common cases of RequestLimitExceeded by pushing
+	// instance count into this API.
+	var instanceId string
+	for retries := 0; err == nil; retries++ {
+		instanceId, err = run()
+		if err == nil {
+			break
+		}
+		if aerr, ok := err.(awserr.Error); !ok || aerr.Code() != "RequestLimitExceeded" {
+			break
+		}
+		log.Error.Printf("ec2machine: retrying request limit error: %v", err)
+		err = retry.Wait(ctx, retryPolicy, retries)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	// Asynhronously tag the instance so we don't hold up the process.
 	go func() {
 		// TODO(marius): there should be some abstraction that provides the name,
@@ -354,6 +384,7 @@ func (s *System) Start(ctx context.Context) (*bigmachine.Machine, error) {
 		InstanceIds: []*string{aws.String(instanceId)},
 	})
 	if err != nil {
+		log.Error.Printf("DescribeInstances error: %v", err)
 		return nil, err
 	}
 	if len(describeInstance.Reservations) != 1 || len(describeInstance.Reservations[0].Instances) != 1 {

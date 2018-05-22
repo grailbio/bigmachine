@@ -53,6 +53,11 @@ func ec2WaitForSpotFulfillment(ctx context.Context, client ec2iface.EC2API, spot
 				Matcher: request.PathAnyWaiterMatch, Argument: "SpotInstanceRequests[].Status.Code",
 				Expected: "system-error",
 			},
+			{
+				State:    request.RetryWaiterState,
+				Matcher:  request.ErrorWaiterMatch,
+				Expected: "InvalidSpotInstanceRequestID.NotFound",
+			},
 		},
 		NewRequest: func(opts []request.Option) (*request.Request, error) {
 			req, _ := client.DescribeSpotInstanceRequestsRequest(&ec2.DescribeSpotInstanceRequestsInput{

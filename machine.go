@@ -21,6 +21,7 @@ import (
 
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
+	"github.com/grailbio/base/retry"
 	"github.com/grailbio/bigmachine/rpc"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
@@ -39,6 +40,9 @@ import (
 
 // OutputMu is used to safely interleave tail output from multiple machines.
 var outputMu sync.Mutex
+
+// RetryPolicy is the default retry policy used for machine calls.
+var retryPolicy = retry.Backoff(time.Second, 5*time.Second, 1.5)
 
 // State enumerates the possible states of a machine. Machine states
 // proceed monotonically: they can only increase in value.
@@ -329,8 +333,7 @@ func (m *Machine) loop() {
 	for {
 		retryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		var next time.Duration
-		err := m.retryCall(retryCtx, newBackoffRetrier(time.Second, 1),
-			"Supervisor.Keepalive", keepalive, &next)
+		err := m.retryCall(retryCtx, retryPolicy, "Supervisor.Keepalive", keepalive, &next)
 		cancel()
 		if err != nil {
 			m.errorf("keepalive failed: %v", err)
@@ -394,7 +397,7 @@ func (m *Machine) tail(ctx context.Context, fd int) error {
 func (m *Machine) ping(ctx context.Context, maxtime time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxtime)
 	defer cancel()
-	return m.retryCall(ctx, newBackoffRetrier(time.Second, 1), "Supervisor.Ping", 0, nil)
+	return m.retryCall(ctx, retryPolicy, "Supervisor.Ping", 0, nil)
 }
 
 // Context returns a new derived context that is canceled whenever
@@ -460,19 +463,22 @@ func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply int
 	return m.client.Call(ctx, m.Addr, serviceMethod, arg, reply)
 }
 
-func (m *Machine) retryCall(ctx context.Context, retrier retrier, serviceMethod string, arg, reply interface{}) error {
-	for retrier.Next(ctx) {
-		if err := m.call(ctx, serviceMethod, arg, reply); err != nil {
-			// TODO(marius): this isn't quite right. Introduce an errors package
-			// similar to Reflow's here to categorize errors properly.
-			if _, ok := err.(net.Error); !ok {
-				log.Error.Printf("%s %s(%v): %v", m.Addr, serviceMethod, arg, err)
-			}
-		} else {
+func (m *Machine) retryCall(ctx context.Context, policy retry.Policy, serviceMethod string, arg, reply interface{}) error {
+	var err error
+	for retries := 0; ; retries++ {
+		err = m.call(ctx, serviceMethod, arg, reply)
+		if err == nil {
 			return nil
 		}
+		// TODO(marius): this isn't quite right. Introduce an errors package
+		// similar to Reflow's here to categorize errors properly.
+		if _, ok := err.(net.Error); !ok {
+			log.Error.Printf("%s %s(%v): %v", m.Addr, serviceMethod, arg, err)
+		}
+		if err := retry.Wait(ctx, policy, retries); err != nil {
+			return err
+		}
 	}
-	return retrier.Err()
 }
 
 // Call invokes a method named by a service on this machine. The
@@ -540,66 +546,4 @@ func (m *Machine) saveExpvars(ctx context.Context, path string) error {
 	}
 	defer f.Close()
 	return json.NewEncoder(f).Encode(vars)
-}
-
-// A retrier is an interface to abstract retry logic. It should be
-// called as follows:
-//
-//	var r retrier = ...
-//	for r.Next(ctx) {
-//		if err := retriableWork(); err == nil || !isRetriableError(err) {
-//			return err
-//		}
-//	}
-//	return r.Err()
-type retrier interface {
-	// Next is called before each call. Next returns a boolean
-	// indicating whether the call should proceed. Next may sleep, but
-	// will respect the passed-in context.
-	Next(ctx context.Context) bool
-	// Err returns the retrier's error, generally because a retry budget is
-	// exhausted or because the context passed to Next was canceled.
-	Err() error
-}
-
-type backoffRetrier struct {
-	n, factor int
-	wait      time.Duration
-	err       error
-}
-
-// NewBackoffRetrier returns a retrier that performs retries until the
-// context passed into Next is canceled. The retrier initially waits for
-// the amount of time specified by parameter initial; on each try this
-// value is multiplied by the provided factor.
-func newBackoffRetrier(initial time.Duration, factor int) retrier {
-	return &backoffRetrier{
-		wait:   initial,
-		factor: factor,
-	}
-}
-
-func (b *backoffRetrier) Next(ctx context.Context) bool {
-	b.n++
-	if b.n == 1 {
-		return true
-	}
-	wait := b.wait
-	b.wait *= time.Duration(b.factor)
-	deadline, ok := ctx.Deadline()
-	if ok && time.Until(deadline) < wait {
-		b.err = errors.E(errors.Timeout, "ran out of time while waiting for retry")
-		return false
-	}
-	select {
-	case <-time.After(wait):
-		return true
-	case <-ctx.Done():
-		b.err = ctx.Err()
-		return false
-	}
-}
-
-func (b *backoffRetrier) Err() error {
-	return b.err
 }
