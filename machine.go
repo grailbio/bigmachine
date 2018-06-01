@@ -297,7 +297,7 @@ func (m *Machine) loop() {
 		// (up or down) by maintaining a period ping.
 		m.setState(Running)
 		for {
-			if err := m.ping(ctx, 5*time.Second); err != nil {
+			if err := m.ping(ctx, 2*time.Minute); err != nil {
 				m.errorf("ping failed: %v", err)
 				return
 			}
@@ -331,10 +331,8 @@ func (m *Machine) loop() {
 	}
 	const keepalive = 5 * time.Minute
 	for {
-		retryCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		var next time.Duration
-		err := m.retryCall(retryCtx, retryPolicy, "Supervisor.Keepalive", keepalive, &next)
-		cancel()
+		err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Keepalive", keepalive, &next)
 		if err != nil {
 			m.errorf("keepalive failed: %v", err)
 			return
@@ -347,10 +345,8 @@ func (m *Machine) loop() {
 		// Check memory stats and take a heap profile if we're about to OOM.
 		//
 		// TODO(marius): rate limit, collect, or rotate these?
-		timeoutctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		var meminfo MemInfo
-		err = m.Call(timeoutctx, "Supervisor.MemInfo", struct{}{}, &meminfo)
-		cancel()
+		err = m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.MemInfo", struct{}{}, &meminfo)
 		if err != nil {
 			log.Error.Printf("%s: failed to retrieve meminfo: %v", m.Addr, err)
 		} else if used := meminfo.System.UsedPercent; used > 95 {
@@ -395,9 +391,7 @@ func (m *Machine) tail(ctx context.Context, fd int) error {
 }
 
 func (m *Machine) ping(ctx context.Context, maxtime time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, maxtime)
-	defer cancel()
-	return m.retryCall(ctx, retryPolicy, "Supervisor.Ping", 0, nil)
+	return m.retryCall(ctx, maxtime, 25*time.Second, "Supervisor.Ping", 0, nil)
 }
 
 // Context returns a new derived context that is canceled whenever
@@ -463,10 +457,14 @@ func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply int
 	return m.client.Call(ctx, m.Addr, serviceMethod, arg, reply)
 }
 
-func (m *Machine) retryCall(ctx context.Context, policy retry.Policy, serviceMethod string, arg, reply interface{}) error {
+func (m *Machine) retryCall(ctx context.Context, overallTimeout, rpcTimeout time.Duration, serviceMethod string, arg, reply interface{}) error {
+	retryCtx, cancel := context.WithTimeout(ctx, overallTimeout)
+	defer cancel()
 	var err error
 	for retries := 0; ; retries++ {
-		err = m.call(ctx, serviceMethod, arg, reply)
+		rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+		err = m.call(rpcCtx, serviceMethod, arg, reply)
+		cancel()
 		if err == nil {
 			return nil
 		}
@@ -475,7 +473,7 @@ func (m *Machine) retryCall(ctx context.Context, policy retry.Policy, serviceMet
 		if _, ok := err.(net.Error); !ok {
 			log.Error.Printf("%s %s(%v): %v", m.Addr, serviceMethod, arg, err)
 		}
-		if err := retry.Wait(ctx, policy, retries); err != nil {
+		if err := retry.Wait(retryCtx, retryPolicy, retries); err != nil {
 			return err
 		}
 	}
@@ -534,10 +532,8 @@ func (m *Machine) saveProfile(ctx context.Context, which, path string) error {
 // SaveExpvars saves a JSON-encoded snapshot of this machine's
 // expvars to the provided path.
 func (m *Machine) saveExpvars(ctx context.Context, path string) error {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
 	var vars Expvars
-	if err := m.Call(ctx, "Supervisor.Expvars", struct{}{}, &vars); err != nil {
+	if err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Expvars", struct{}{}, &vars); err != nil {
 		return err
 	}
 	f, err := os.Create(path)

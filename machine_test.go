@@ -137,10 +137,13 @@ func TestCallTimeout(t *testing.T) {
 func TestMachineContext(t *testing.T) {
 	m, supervisor, shutdown := newTestMachine(t)
 	defer shutdown()
+	supervisor.Hung = true
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		supervisor.Hung = true
+		time.Sleep(5 * time.Second)
+		cancel()
 	}()
-	err := m.Call(context.Background(), "Supervisor.Hang", struct{}{}, nil)
+	err := m.Call(ctx, "Supervisor.Hang", struct{}{}, nil)
 	if got, want := err, context.Canceled; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
