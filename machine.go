@@ -183,8 +183,9 @@ func (m *Machine) Wait(state State) <-chan struct{} {
 }
 
 // MemInfo returns the machine's memory usage information.
-func (m *Machine) MemInfo(ctx context.Context) (info MemInfo, err error) {
-	err = m.Call(ctx, "Supervisor.MemInfo", struct{}{}, &info)
+// Go runtime memory stats are read if readMemStats is true.
+func (m *Machine) MemInfo(ctx context.Context, readMemStats bool) (info MemInfo, err error) {
+	err = m.Call(ctx, "Supervisor.MemInfo", readMemStats, &info)
 	return
 }
 
@@ -310,8 +311,8 @@ func (m *Machine) loop() {
 	//	(1) instantiate the machine's services
 	//	(2) duplicate the machine's standard output and error to our own
 	//	(3) maintain a keepalive
-	//	(4) query VM stats and take emergency pre-OOM heap profiles
-	//		if we're on the verge of OOMing
+	//	(4) take emergency pre-OOM heap profiles if the keepalive reply
+	//	  indicates that we're close to machine death
 	for name, iface := range m.services {
 		if err := m.call(ctx, "Supervisor.Register", service{name, iface}, nil); err != nil {
 			m.setError(errors.E(err, fmt.Sprintf("Supervisor.Register %s", name)))
@@ -331,26 +332,23 @@ func (m *Machine) loop() {
 	}
 	const keepalive = 5 * time.Minute
 	for {
-		var next time.Duration
-		err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Keepalive", keepalive, &next)
+		var reply keepaliveReply
+		err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Keepalive", keepalive, &reply)
 		if err != nil {
 			m.errorf("keepalive failed: %v", err)
 			return
 		}
+		next := reply.Next
 		if next > time.Minute {
 			next = time.Minute
 		}
 		nextc := time.After(next / 2)
 
-		// Check memory stats and take a heap profile if we're about to OOM.
+		// Check memory stats and take a heap profile if we're likely to die soon.
 		//
 		// TODO(marius): rate limit, collect, or rotate these?
-		var meminfo MemInfo
-		err = m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.MemInfo", struct{}{}, &meminfo)
-		if err != nil {
-			log.Error.Printf("%s: failed to retrieve meminfo: %v", m.Addr, err)
-		} else if used := meminfo.System.UsedPercent; used > 95 {
-			log.Printf("%s: low system memory (used %.1f), taking heap profile and dumping stats", m.Addr, used)
+		if !reply.Healthy {
+			log.Printf("%s: supervisor indicated machine was unhealthy, taking heap profile and expvar dump", m.Addr)
 			suffix := "." + m.Hostname() + "-" + time.Now().Format("20060102T150405")
 			path := "heap" + suffix
 			if err := m.saveProfile(ctx, "heap", path); err != nil {

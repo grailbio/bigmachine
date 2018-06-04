@@ -132,7 +132,7 @@ func allInfo(ctx context.Context, m *Machine) machineInfo {
 	)
 	g.Go(func() error {
 		var err error
-		mem, err = m.MemInfo(ctx)
+		mem, err = m.MemInfo(ctx, true)
 		return err
 	})
 	g.Go(func() error {

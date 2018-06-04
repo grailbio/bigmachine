@@ -17,6 +17,7 @@ import (
 	"runtime/pprof"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -28,7 +29,10 @@ import (
 	"github.com/shirou/gopsutil/mem"
 )
 
-const maxTeeBuffer = 1 << 20
+const (
+	maxTeeBuffer     = 1 << 20
+	memProfilePeriod = time.Minute
+)
 
 var (
 	digester     = digest.Digester(crypto.SHA256)
@@ -53,6 +57,7 @@ type Supervisor struct {
 	nextc                chan time.Time
 	saveFds              map[int]int
 	stdoutTee, stderrTee *tee
+	healthy              uint32
 }
 
 // StartSupervisor starts a new supervisor based on the provided arguments.
@@ -76,6 +81,7 @@ func StartSupervisor(b *B, system System, server *rpc.Server, redirect bool) *Su
 			log.Error.Printf("failed to tee stdout: %v", err)
 		}
 	}
+	s.healthy = 1
 	s.nextc = make(chan time.Time)
 	go s.watchdog()
 	return s
@@ -204,8 +210,11 @@ func (s *Supervisor) Info(ctx context.Context, _ struct{}, info *Info) error {
 }
 
 // MemInfo returns system and Go runtime memory usage information.
-func (s *Supervisor) MemInfo(ctx context.Context, _ struct{}, info *MemInfo) error {
-	runtime.ReadMemStats(&info.Runtime)
+// Go runtime stats are read if readMemStats is true.
+func (s *Supervisor) MemInfo(ctx context.Context, readMemStats bool, info *MemInfo) error {
+	if readMemStats {
+		runtime.ReadMemStats(&info.Runtime)
+	}
 	vm, err := mem.VirtualMemory()
 	if err != nil {
 		return err
@@ -298,12 +307,21 @@ func (s *Supervisor) Profiles(ctx context.Context, _ struct{}, profiles *[]profi
 	return nil
 }
 
+// A keepaliveReply stores the reply to a supervisor keepalive request.
+type keepaliveReply struct {
+	// Next is the time until the next expected keepalive.
+	Next time.Duration
+	// Healthy indicates whether the supervisor believes the process to
+	// be healthy. An unhealthy process may soon die.
+	Healthy bool
+}
+
 // Keepalive maintains the machine keepalive. The next argument
 // indicates the callers desired keepalive interval (i.e., the amount
 // of time until the keepalive expires from the time of the call);
 // the accepted time is returned. In order to maintain the keepalive,
 // the driver should call Keepalive again before replynext expires.
-func (s *Supervisor) Keepalive(ctx context.Context, next time.Duration, replynext *time.Duration) error {
+func (s *Supervisor) Keepalive(ctx context.Context, next time.Duration, reply *keepaliveReply) error {
 	now := time.Now()
 	defer func() {
 		if diff := time.Since(now); diff > 200*time.Millisecond {
@@ -313,7 +331,8 @@ func (s *Supervisor) Keepalive(ctx context.Context, next time.Duration, replynex
 	t := now.Add(next)
 	select {
 	case s.nextc <- t:
-		*replynext = time.Until(t)
+		reply.Next = time.Until(t)
+		reply.Healthy = atomic.LoadUint32(&s.healthy) != 0
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -351,10 +370,14 @@ func (s *Supervisor) Expvars(ctx context.Context, _ struct{}, vars *Expvars) err
 	return nil
 }
 
+// TODO(marius): implement a systemd-level watchdog in this routine also.
 func (s *Supervisor) watchdog() {
-	tick := time.NewTicker(30 * time.Second)
-	// Give a generous initial timeout.
-	next := time.Now().Add(2 * time.Minute)
+	var (
+		tick = time.NewTicker(30 * time.Second)
+		// Give a generous initial timeout.
+		next           = time.Now().Add(2 * time.Minute)
+		lastMemProfile time.Time
+	)
 	for {
 		select {
 		case <-tick.C:
@@ -362,6 +385,21 @@ func (s *Supervisor) watchdog() {
 		}
 		if time.Since(next) > time.Duration(0) {
 			s.system.Exit(1)
+		}
+		if time.Since(lastMemProfile) > memProfilePeriod {
+			vm, err := mem.VirtualMemory()
+			if err != nil {
+				// In the case of error, we don't change health status.
+				log.Error.Printf("failed to retrieve VM stats: %v", err)
+				continue
+			}
+			if used := vm.UsedPercent; used <= 95 {
+				atomic.StoreUint32(&s.healthy, 1)
+			} else {
+				log.Error.Printf("using %d%% of system memory; marking machine unhealthy", used)
+				atomic.StoreUint32(&s.healthy, 0)
+			}
+			lastMemProfile = time.Now()
 		}
 	}
 }

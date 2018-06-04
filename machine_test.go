@@ -54,13 +54,14 @@ func (s *fakeSupervisor) Info(ctx context.Context, _ struct{}, info *Info) error
 	return nil
 }
 
-func (s *fakeSupervisor) Keepalive(ctx context.Context, next time.Duration, replynext *time.Duration) error {
+func (s *fakeSupervisor) Keepalive(ctx context.Context, next time.Duration, reply *keepaliveReply) error {
 	if s.Hung {
 		<-ctx.Done()
 		return ctx.Err()
 	}
 	s.LastKeepalive = time.Now()
-	*replynext = next
+	reply.Next = next
+	reply.Healthy = true
 	return nil
 }
 
