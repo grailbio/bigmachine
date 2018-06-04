@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"text/tabwriter"
 	"text/template"
 	"time"
@@ -21,6 +22,15 @@ var startTime = time.Now()
 
 var statusTemplate = template.Must(template.New("status").
 	Funcs(template.FuncMap{
+		"roundjoindur": func(ds []time.Duration) string {
+			strs := make([]string, len(ds))
+			for i, d := range ds {
+				d = d - d%time.Millisecond
+				strs[i] = d.String()
+			}
+			return strings.Join(strs, " ")
+		},
+		"until": time.Until,
 		"human": func(v interface{}) string {
 			switch v := v.(type) {
 			case int:
@@ -47,23 +57,26 @@ var statusTemplate = template.Must(template.New("status").
 		},
 	}).
 	Parse(`{{.machine.Addr}}
-	memory:
-		total:	{{human .mem.System.Total}}
-		used:	{{human .mem.System.Used}}
-		(percent):	{{printf "%.1f%%" .mem.System.UsedPercent}}
-		available:	{{human .mem.System.Available}}
-		runtime:	{{human .mem.Runtime.Sys}}
-		(alloc):	{{human .mem.Runtime.Alloc}}
+{{if .machine.Owned}}	keepalive:
+		next:	{{.info.NextKeepalive}} (in {{until .info.NextKeepalive}})
+		reply times:	{{roundjoindur .info.KeepaliveReplyTimes}}
+{{end}}	memory:
+		total:	{{human .info.MemInfo.System.Total}}
+		used:	{{human .info.MemInfo.System.Used}}
+		(percent):	{{printf "%.1f%%" .info.MemInfo.System.UsedPercent}}
+		available:	{{human .info.MemInfo.System.Available}}
+		runtime:	{{human .info.MemInfo.Runtime.Sys}}
+		(alloc):	{{human .info.MemInfo.Runtime.Alloc}}
 	runtime:
 		uptime:	{{.uptime}}
-		pausetime:	{{ns .mem.Runtime.PauseTotalNs}}
+		pausetime:	{{ns .info.MemInfo.Runtime.PauseTotalNs}}
 		(last):	{{ns .lastpause}}
 	disk:
-		total:	{{human .disk.Usage.Total}}
-		available:	{{human .disk.Usage.Free}}
-		used:	{{human .disk.Usage.Used}}
-		(percent):	{{printf "%.1f%%" .disk.Usage.UsedPercent}}
-	load: {{printf "%.1f %.1f %.1f" .load.Averages.Load1 .load.Averages.Load5 .load.Averages.Load15}}
+		total:	{{human .info.DiskInfo.Usage.Total}}
+		available:	{{human .info.DiskInfo.Usage.Free}}
+		used:	{{human .info.DiskInfo.Usage.Used}}
+		(percent):	{{printf "%.1f%%" .info.DiskInfo.Usage.UsedPercent}}
+	load: {{printf "%.1f %.1f %.1f" .info.LoadInfo.Averages.Load1 .info.LoadInfo.Averages.Load5 .info.LoadInfo.Averages.Load15}}
 `))
 
 // StatusHandler implements an HTTP handler that displays machine
@@ -71,7 +84,7 @@ var statusTemplate = template.Must(template.New("status").
 type statusHandler struct{ *B }
 
 func (s *statusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	machines := s.B.Machines()
 	sort.Slice(machines, func(i, j int) bool {
 		return machines[i].Addr < machines[j].Addr
@@ -104,9 +117,7 @@ func (s *statusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		err := statusTemplate.Execute(&tw, map[string]interface{}{
 			"machine":   m,
-			"mem":       info.MemInfo,
-			"disk":      info.DiskInfo,
-			"load":      info.LoadInfo,
+			"info":      info,
 			"uptime":    time.Since(startTime),
 			"lastpause": info.MemInfo.Runtime.PauseNs[(info.MemInfo.Runtime.NumGC+255)%256],
 		})
@@ -121,6 +132,8 @@ type machineInfo struct {
 	MemInfo
 	DiskInfo
 	LoadInfo
+	KeepaliveReplyTimes []time.Duration
+	NextKeepalive       time.Time
 }
 
 func allInfo(ctx context.Context, m *Machine) machineInfo {
@@ -146,5 +159,12 @@ func allInfo(ctx context.Context, m *Machine) machineInfo {
 		return err
 	})
 	err := g.Wait()
-	return machineInfo{err, mem, disk, load}
+	return machineInfo{
+		err:                 err,
+		MemInfo:             mem,
+		DiskInfo:            disk,
+		LoadInfo:            load,
+		KeepaliveReplyTimes: m.KeepaliveReplyTimes(),
+		NextKeepalive:       m.NextKeepalive(),
+	}
 }

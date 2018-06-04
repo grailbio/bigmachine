@@ -28,6 +28,10 @@ import (
 	"github.com/shirou/gopsutil/mem"
 )
 
+// NumKeepaliveReplyTimes is the number of keepalive reply times to
+// store for each machine.
+const numKeepaliveReplyTimes = 10
+
 // TODO(marius): We could define a Gob decoder for machines that
 // encode its address and dial it on decode. On the other hand, it's
 // nice to be explicit about dialling.
@@ -142,12 +146,42 @@ type Machine struct {
 	err       error
 	waiters   []stateWaiter
 	cancelers map[canceler]struct{}
+
+	nextKeepalive       time.Time
+	numKeepalive        int
+	keepaliveReplyTimes [numKeepaliveReplyTimes]time.Duration
 }
 
 // Owned tells whether this machine was created and is managed
 // by this bigmachine instance.
 func (m *Machine) Owned() bool {
 	return m.owner
+}
+
+// KeepaliveReplyTimes returns a buffer up to the last
+// numKeepaliveReplyTimes keepalive reply latencies,
+// most recent first.
+func (m *Machine) KeepaliveReplyTimes() []time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := len(m.keepaliveReplyTimes)
+	if m.numKeepalive < n {
+		n = m.numKeepalive
+	}
+	times := make([]time.Duration, n)
+	for i := range times {
+		times[i] = m.keepaliveReplyTimes[(m.numKeepalive-i-1)%n]
+	}
+	return times
+}
+
+// NextKeepalive returns the time at which the next keepalive
+// request is due.
+func (m *Machine) NextKeepalive() time.Time {
+	m.mu.Lock()
+	t := m.nextKeepalive
+	m.mu.Unlock()
+	return t
 }
 
 // Hostname returns the hostname portion of the machine's address.
@@ -332,12 +366,18 @@ func (m *Machine) loop() {
 	}
 	const keepalive = 5 * time.Minute
 	for {
+		start := time.Now()
 		var reply keepaliveReply
 		err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Keepalive", keepalive, &reply)
 		if err != nil {
 			m.errorf("keepalive failed: %v", err)
 			return
 		}
+		m.mu.Lock()
+		m.keepaliveReplyTimes[m.numKeepalive%len(m.keepaliveReplyTimes)] = time.Since(start)
+		m.numKeepalive++
+		m.nextKeepalive = time.Now().Add(reply.Next)
+		m.mu.Unlock()
 		next := reply.Next
 		if next > time.Minute {
 			next = time.Minute
