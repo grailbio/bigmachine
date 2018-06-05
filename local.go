@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/bigioutil"
@@ -95,6 +96,13 @@ func (localSystem) Shutdown() {}
 
 func (localSystem) Maxprocs() int {
 	return 1
+}
+
+func (localSystem) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
+	period = time.Minute
+	timeout = 2 * time.Minute
+	rpcTimeout = 10 * time.Second
+	return
 }
 
 func getFreeTCPPort() (int, error) {

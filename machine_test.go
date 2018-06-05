@@ -83,9 +83,12 @@ func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, shutd
 		t.Fatal(err)
 	}
 	m = &Machine{
-		Addr:   httpsrv.URL,
-		client: client,
-		owner:  true,
+		Addr:                httpsrv.URL,
+		client:              client,
+		owner:               true,
+		keepalivePeriod:     time.Minute,
+		keepaliveTimeout:    2 * time.Minute,
+		keepaliveRpcTimeout: 10 * time.Second,
 	}
 	m.start(nil)
 	return m, supervisor, func() {

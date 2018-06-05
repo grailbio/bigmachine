@@ -7,6 +7,7 @@ package bigmachine
 import (
 	"context"
 	"net/http"
+	"time"
 )
 
 // A System implements a set of methods to set up a bigmachine and
@@ -44,4 +45,7 @@ type System interface {
 	// Maxprocs returns the maximum number of processors per machine,
 	// as configured. Returns 0 if is a dynamic value.
 	Maxprocs() int
+	// KeepaliveConfig returns the various keepalive timeouts that should
+	// be used to maintain keepalives for machines started by this system.
+	KeepaliveConfig() (period, timeout, rpcTimeout time.Duration)
 }

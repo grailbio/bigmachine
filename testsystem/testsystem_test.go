@@ -9,6 +9,7 @@ import (
 	"encoding/gob"
 	"testing"
 
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bigmachine"
 )
 
@@ -45,4 +46,18 @@ func TestTestSystem(t *testing.T) {
 	if got, want := reply, 1; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
+	if got, want := test.N(), 1; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if !test.KillRandom() {
+		t.Fatal("failed to kill")
+	}
+	if got, want := test.N(), 0; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	err = m.Call(ctx, "Service.Method", 0, &reply)
+	if err == nil || !errors.Is(errors.Net, err) {
+		t.Errorf("bad error %v", err)
+	}
+	m.Wait(bigmachine.Stopped)
 }

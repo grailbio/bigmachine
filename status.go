@@ -137,6 +137,8 @@ type machineInfo struct {
 }
 
 func allInfo(ctx context.Context, m *Machine) machineInfo {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 	var (
 		mem  MemInfo

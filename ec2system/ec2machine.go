@@ -742,6 +742,13 @@ func (s *System) Maxprocs() int {
 	return int(s.config.VCPU)
 }
 
+func (*System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
+	period = time.Minute
+	timeout = 10 * time.Minute
+	rpcTimeout = 2 * time.Minute
+	return
+}
+
 type args map[string]interface{}
 
 // tmpl renders the template text, after first stripping common

@@ -59,7 +59,7 @@ type Supervisor struct {
 }
 
 // StartSupervisor starts a new supervisor based on the provided arguments.
-func StartSupervisor(b *B, system System, server *rpc.Server) *Supervisor {
+func StartSupervisor(ctx context.Context, b *B, system System, server *rpc.Server) *Supervisor {
 	s := &Supervisor{
 		b:      b,
 		system: system,
@@ -67,7 +67,7 @@ func StartSupervisor(b *B, system System, server *rpc.Server) *Supervisor {
 	}
 	s.healthy = 1
 	s.nextc = make(chan time.Time)
-	go s.watchdog()
+	go s.watchdog(ctx)
 	return s
 }
 
@@ -325,7 +325,7 @@ func (s *Supervisor) Expvars(ctx context.Context, _ struct{}, vars *Expvars) err
 }
 
 // TODO(marius): implement a systemd-level watchdog in this routine also.
-func (s *Supervisor) watchdog() {
+func (s *Supervisor) watchdog(ctx context.Context) {
 	var (
 		tick = time.NewTicker(30 * time.Second)
 		// Give a generous initial timeout.
@@ -336,6 +336,8 @@ func (s *Supervisor) watchdog() {
 		select {
 		case <-tick.C:
 		case next = <-s.nextc:
+		case <-ctx.Done():
+			return
 		}
 		if time.Since(next) > time.Duration(0) {
 			log.Error.Print("Watchdog expiration: next=%v", next.Format(time.RFC3339))

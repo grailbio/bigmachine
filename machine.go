@@ -145,6 +145,10 @@ type Machine struct {
 	nextKeepalive       time.Time
 	numKeepalive        int
 	keepaliveReplyTimes [numKeepaliveReplyTimes]time.Duration
+
+	// KeepalivePeriod, keepaliveTimeout, and keepaliveRpcTimeout configures
+	// keepalive behavior.
+	keepalivePeriod, keepaliveTimeout, keepaliveRpcTimeout time.Duration
 }
 
 // Owned tells whether this machine was created and is managed
@@ -242,6 +246,9 @@ func (m *Machine) Err() error {
 func (m *Machine) start(b *B) {
 	if m.client == nil {
 		m.client = b.client
+	}
+	if m.keepalivePeriod == 0 {
+		m.keepalivePeriod, m.keepaliveTimeout, m.keepaliveRpcTimeout = b.System().KeepaliveConfig()
 	}
 	m.cancelers = make(map[canceler]struct{})
 	go m.loop()
@@ -356,9 +363,10 @@ func (m *Machine) loop() {
 	for {
 		start := time.Now()
 		var reply keepaliveReply
-		err := m.retryCall(ctx, 10*time.Minute, 2*time.Minute, "Supervisor.Keepalive", keepalive, &reply)
+		err := m.retryCall(ctx, m.keepaliveTimeout, m.keepaliveRpcTimeout, "Supervisor.Keepalive", keepalive, &reply)
 		if err != nil {
-			m.errorf("keepalive failed: %v", err)
+			m.errorf("keepalive failed after %s (timeout=%s, rpc timeout=%s): %v",
+				time.Since(start), m.keepaliveTimeout, m.keepaliveRpcTimeout, err)
 			return
 		}
 		m.mu.Lock()
@@ -367,8 +375,8 @@ func (m *Machine) loop() {
 		m.nextKeepalive = time.Now().Add(reply.Next)
 		m.mu.Unlock()
 		next := reply.Next
-		if next > time.Minute {
-			next = time.Minute
+		if next > m.keepalivePeriod {
+			next = m.keepalivePeriod
 		}
 		nextc := time.After(next / 2)
 
@@ -507,14 +515,17 @@ func (m *Machine) Call(ctx context.Context, serviceMethod string, arg, reply int
 		switch state := m.State(); state {
 		case Running:
 			ctx, cancel := m.context(ctx)
+			defer cancel()
 			err := m.call(ctx, serviceMethod, arg, reply)
-			cancel()
-			return err
+			if err == nil || err != ctx.Err() || m.State() != Stopped {
+				return err
+			}
+			fallthrough
 		case Stopped:
 			if err := m.Err(); err != nil {
 				return err
 			}
-			return fmt.Errorf("machine %s is stopped", m.Addr)
+			return errors.E(errors.Unavailable, fmt.Sprintf("machine %s stopped", m.Addr))
 		default:
 			select {
 			case <-ctx.Done():

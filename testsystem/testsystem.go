@@ -10,32 +10,105 @@ package testsystem
 
 import (
 	"context"
-	"fmt"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
+	"sync"
+	"time"
 
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/rpc"
 )
 
+type closeIdleTransport interface {
+	CloseIdleConnections()
+}
+
+type machine struct {
+	*bigmachine.Machine
+	Cancel func()
+	Server *httptest.Server
+}
+
+func (m *machine) Kill() {
+	m.Cancel()
+	m.Server.CloseClientConnections()
+	m.Server.Close()
+	m.Server.Listener.Close()
+	m.Server.Config.SetKeepAlivesEnabled(false)
+}
+
 // System implements a bigmachine System for testing.
 // Systems should be instantiated with New().
 type System struct {
-	server *httptest.Server
+	// Machineprocs is the number of procs per machine.
+	Machineprocs int
+
 	done   chan struct{}
 	b      *bigmachine.B
 	exited bool
 
-	mux   http.ServeMux
-	index uint64
+	client *http.Client
+
+	mu       sync.Mutex
+	cond     *sync.Cond
+	machines []*machine
 }
 
 // New creates a new System that is ready for use.
 func New() *System {
-	sys := &System{done: make(chan struct{})}
-	sys.server = httptest.NewServer(&sys.mux)
-	return sys
+	s := &System{
+		Machineprocs: 1,
+		done:         make(chan struct{}),
+		client:       &http.Client{Transport: &http.Transport{}},
+	}
+	s.cond = sync.NewCond(&s.mu)
+	return s
+}
+
+func (s *System) Wait(n int) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for len(s.machines) < n {
+		s.cond.Wait()
+	}
+	return n
+}
+
+// N returns the number of live machines in the test system.
+func (s *System) N() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.machines)
+}
+
+// KillRandom kills a random machine, returning true if it was successful.
+func (s *System) KillRandom() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.machines) == 0 {
+		return false
+	}
+	i := rand.Intn(len(s.machines))
+	m := s.machines[i]
+	s.machines = append(s.machines[:i], s.machines[i+1:]...)
+	m.Kill()
+	return true
+}
+
+// Kill kills the machine m that is under management of this system,
+// returning true if successful.
+func (s *System) Kill(m *bigmachine.Machine) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, sm := range s.machines {
+		if sm.Machine == m {
+			s.machines = append(s.machines[:i], s.machines[i+1:]...)
+			sm.Kill()
+			return true
+		}
+	}
+	return false
 }
 
 // Exited tells whether exit has been called on (any) machine.
@@ -47,7 +120,13 @@ func (s *System) Exited() bool {
 // System.
 func (s *System) Shutdown() {
 	close(s.done)
-	s.server.Close()
+
+	if t, ok := http.DefaultTransport.(closeIdleTransport); ok {
+		t.CloseIdleConnections()
+	}
+	if t, ok := s.client.Transport.(closeIdleTransport); ok {
+		t.CloseIdleConnections()
+	}
 }
 
 // Name returns the name of the system.
@@ -70,7 +149,7 @@ func (s *System) Main() error {
 // HTTPClient returns an http.Client that can converse with
 // servers created by this test system.
 func (s *System) HTTPClient() *http.Client {
-	return s.server.Client()
+	return s.client
 }
 
 // ListenAndServe panics. It should not be called, provided a
@@ -87,16 +166,23 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 func (s *System) Start(_ context.Context, count int) ([]*bigmachine.Machine, error) {
 	machines := make([]*bigmachine.Machine, count)
 	for i := range machines {
+		ctx, cancel := context.WithCancel(context.Background())
 		server := rpc.NewServer()
-		server.Register("Supervisor", bigmachine.StartSupervisor(s.b, s, server))
-		index := atomic.AddUint64(&s.index, 1)
-		path := "/" + fmt.Sprint(index)
-		s.mux.Handle(path+bigmachine.RpcPrefix, server)
-		machines[i] = &bigmachine.Machine{
-			Addr:     s.server.URL + path,
-			Maxprocs: 1,
+		server.Register("Supervisor", bigmachine.StartSupervisor(ctx, s.b, s, server))
+		mux := http.NewServeMux()
+		mux.Handle(bigmachine.RpcPrefix, server)
+		httpServer := httptest.NewServer(mux)
+
+		m := &bigmachine.Machine{
+			Addr:     httpServer.URL,
+			Maxprocs: s.Machineprocs,
 			NoExec:   true,
 		}
+		s.mu.Lock()
+		s.machines = append(s.machines, &machine{m, cancel, httpServer})
+		s.cond.Broadcast()
+		s.mu.Unlock()
+		machines[i] = m
 	}
 	return machines, nil
 }
@@ -108,5 +194,12 @@ func (s *System) Exit(int) {
 
 // Maxprocs returns 1.
 func (s *System) Maxprocs() int {
-	return 1
+	return s.Machineprocs
+}
+
+func (*System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
+	period = time.Minute
+	timeout = 2 * time.Minute
+	rpcTimeout = 10 * time.Second
+	return
 }
