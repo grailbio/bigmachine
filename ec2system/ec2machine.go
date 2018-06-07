@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -171,7 +172,7 @@ func (s *System) Init(b *bigmachine.B) error {
 	}
 	// TODO(marius): derive defaults from a config
 	if s.AMI == "" {
-		s.AMI = "ami-7c488704"
+		s.AMI = "ami-4296ec3a"
 	}
 	if s.Region == "" {
 		s.Region = "us-west-2"
@@ -506,6 +507,21 @@ func (s *System) cloudConfig() *cloudConfig {
 		`, args{"name": dataDeviceName}),
 		})
 	}
+
+	// Increase the open-file limit. The reduce shuffle opens many
+	// filedescriptors.
+	const nropen = 32 << 20    // per-process limit
+	const filemax = nropen * 4 // system-wide limit
+	c.AppendFile(cloudFile{
+		Permissions: "0644",
+		Path:        "/etc/sysctl.d/90-bigmachine",
+		Owner:       "root",
+		Content: tmpl(`
+    fs.file-max = {{.filemax}}
+    fs.nr_open = {{.nropen}}
+
+		`, args{"filemax": filemax, "nropen": nropen}),
+	})
 	// Write the bootstrapping script. It fetches the binary and runs it.
 	c.AppendFile(cloudFile{
 		Permissions: "0755",
@@ -513,7 +529,7 @@ func (s *System) cloudConfig() *cloudConfig {
 		Owner:       "root",
 		Content: tmpl(`
 		#!/bin/bash
-		set -ex 
+		set -ex
 		bin=/opt/bin/ec2boot
 		curl {{.binary}} >$bin
 		chmod +x $bin
@@ -539,6 +555,21 @@ func (s *System) cloudConfig() *cloudConfig {
 		environ = "Environment=TMPDIR=/mnt/data"
 	}
 	c.AppendUnit(cloudUnit{
+		Name:    "update-sysctl.service",
+		Enable:  true,
+		Command: "start",
+		Content: tmpl(`
+			[Unit]
+			Description=Update sysctl
+			[Service]
+			ExecStart=/usr/lib/systemd/systemd-sysctl /etc/sysctl.d/90-bigmachine
+		`, args{}),
+	})
+
+	// Note: LimitNOFILE must be set explicitly, instead of just "infinity", since
+	// the "inifinity" will expand the process'es current hard limit, which is
+	// typically 1M.
+	c.AppendUnit(cloudUnit{
 		Name:    "bootmachine.service",
 		Enable:  true,
 		Command: "start",
@@ -553,13 +584,15 @@ func (s *System) cloudConfig() *cloudConfig {
 			{{end}}
 			[Service]
 			Type=oneshot
-			LimitNOFILE=infinity
+			LimitNOFILE={{.nropen}}
 			{{.environ}}
 			ExecStart=/opt/bin/bootmachine
-		`, args{"mortal": !*immortal, "environ": environ}),
+		`, args{"mortal": !*immortal, "environ": environ, "nropen": nropen}),
 	})
 	return c
 }
+
+const httpTimeout = 30 * time.Second
 
 // HTTPClient returns an HTTP client configured to securely call
 // instances launched by ec2machine over http/2.
@@ -570,7 +603,11 @@ func (s *System) HTTPClient() *http.Client {
 		// TODO: propagate error, or return error client
 		log.Fatal(err)
 	}
-	transport := &http.Transport{TLSClientConfig: config}
+	transport := &http.Transport{
+		Dial:                (&net.Dialer{Timeout: httpTimeout}).Dial,
+		TLSClientConfig:     config,
+		TLSHandshakeTimeout: httpTimeout,
+	}
 	http2.ConfigureTransport(transport)
 	return &http.Client{Transport: transport}
 }
