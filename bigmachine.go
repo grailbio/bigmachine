@@ -89,7 +89,7 @@ func (b *B) run() {
 		log.Fatal(err)
 	}
 	var err error
-	b.client, err = rpc.NewClient(b.system.HTTPClient(), RpcPrefix)
+	b.client, err = rpc.NewClient(func() *http.Client { return b.system.HTTPClient() }, RpcPrefix)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
@@ -42,7 +43,7 @@ func TestServer(t *testing.T) {
 	srv := NewServer()
 	srv.Register("Test", new(TestService))
 	httpsrv := httptest.NewServer(srv)
-	client, err := NewClient(httpsrv.Client(), testPrefix)
+	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +124,7 @@ func TestStream(t *testing.T) {
 	srv := NewServer()
 	srv.Register("Stream", new(TestStreamService))
 	httpsrv := httptest.NewServer(srv)
-	client, err := NewClient(httpsrv.Client(), testPrefix)
+	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}

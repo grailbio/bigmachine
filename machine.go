@@ -349,7 +349,7 @@ func (m *Machine) loop() {
 	//	(4) take emergency pre-OOM heap profiles if the keepalive reply
 	//	  indicates that we're close to machine death
 	for name, iface := range m.services {
-		if err := m.call(ctx, "Supervisor.Register", service{name, iface}, nil); err != nil {
+		if err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Register", service{name, iface}, nil); err != nil {
 			m.setError(errors.E(err, fmt.Sprintf("Supervisor.Register %s", name)))
 			return
 		}
@@ -367,7 +367,7 @@ func (m *Machine) loop() {
 	for {
 		start := time.Now()
 		var reply keepaliveReply
-		err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Keepalive", keepalive, &reply)
+		err := m.retryCall(ctx, 10*time.Minute, 2*time.Minute, "Supervisor.Keepalive", keepalive, &reply)
 		if err != nil {
 			m.errorf("keepalive failed: %v", err)
 			return
@@ -432,7 +432,7 @@ func (m *Machine) tail(ctx context.Context) error {
 			cmd.Stdout = w
 			cmd.Stderr = w
 			err := cmd.Run()
-			log.Printf("Tail %s: retrying (%d)", host, err, retries)
+			log.Printf("Tail %s: %s. retrying (%d)", host, err, retries)
 			if err := retry.Wait(ctx, retryPolicy, retries); err != nil {
 				log.Printf("Tail %s: exiting: %v", host, err)
 				break
@@ -532,15 +532,20 @@ func (m *Machine) retryCall(ctx context.Context, overallTimeout, rpcTimeout time
 		err = m.call(rpcCtx, serviceMethod, arg, reply)
 		cancel()
 		if err == nil {
+			if retries > 0 {
+				log.Printf("%s %s: succeeded after %d retries", m.Addr, serviceMethod, retries)
+			}
 			return nil
 		}
+		log.Debug.Printf("%s %s: %v; retrying (%d)", m.Addr, serviceMethod, err, retries)
 		// TODO(marius): this isn't quite right. Introduce an errors package
 		// similar to Reflow's here to categorize errors properly.
 		if _, ok := err.(net.Error); !ok {
 			log.Error.Printf("%s %s(%v): %v", m.Addr, serviceMethod, arg, err)
 		}
 		if err := retry.Wait(retryCtx, retryPolicy, retries); err != nil {
-			return err
+			// Change the severity from temporary -> fatal.
+			return errors.E(errors.Fatal, err)
 		}
 	}
 }
@@ -571,6 +576,18 @@ func (m *Machine) Call(ctx context.Context, serviceMethod string, arg, reply int
 				return ctx.Err()
 			case <-m.Wait(Running):
 			}
+		}
+	}
+}
+
+// RetryCall invokes Call, and retries on a temporary error.
+func (m *Machine) RetryCall(ctx context.Context, serviceMethod string, arg, reply interface{}) error {
+	for retries := 0; ; retries++ {
+		if err := m.Call(ctx, serviceMethod, arg, reply); err == nil || !errors.IsTemporary(err) {
+			return err
+		}
+		if err := retry.Wait(ctx, retryPolicy, retries); err != nil {
+			return err
 		}
 	}
 }

@@ -407,7 +407,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		return nil, err
 	}
 	if len(describeInstance.Reservations) != 1 || len(describeInstance.Reservations[0].Instances) != len(instanceIds) {
-		return nil, errors.E(errors.Invalid, "ec2.DescribeInstancesinvalid output")
+		return nil, errors.E(errors.Invalid, fmt.Sprintf("ec2.DescribeInstances: invalid output: %+v", describeInstance))
 	}
 	machines := make([]*bigmachine.Machine, len(instanceIds))
 	for i, instance := range describeInstance.Reservations[0].Instances {

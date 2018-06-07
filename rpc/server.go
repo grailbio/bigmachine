@@ -151,13 +151,14 @@ func NewServer() *Server {
 // calls are received from a client. A server dispatches methods
 // concurrently.
 //
-// Register returns an error if the a service with the provided name
-// has already been registered.
+// Register is a noop the a service with the provided name has already been
+// registered.
 func (s *Server) Register(serviceName string, iface interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.services[serviceName] != nil {
-		return fmt.Errorf("service %s already defined", serviceName)
+		log.Printf("service %s already defined", serviceName)
+		return nil
 	}
 	svc := &service{
 		recv: reflect.ValueOf(iface),
@@ -240,7 +241,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := func() (err error) {
 		defer func() {
 			if e := recover(); e != nil {
-				log.Error.Printf("panic in method call\n%s", string(debug.Stack()))
+				log.Error.Printf("panic in method call %s.%s\n%s", service, method, string(debug.Stack()))
 				err = fmt.Errorf("panic: %v", e)
 			}
 		}()

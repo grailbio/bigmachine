@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"testing"
@@ -76,7 +77,7 @@ func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, shutd
 	srv := rpc.NewServer()
 	srv.Register("Supervisor", supervisor)
 	httpsrv := httptest.NewServer(srv)
-	client, err := rpc.NewClient(httpsrv.Client(), "/")
+	client, err := rpc.NewClient(func() *http.Client { return httpsrv.Client() }, "/")
 	if err != nil {
 		httpsrv.Close()
 		t.Fatal(err)
@@ -128,11 +129,12 @@ func TestCallTimeout(t *testing.T) {
 	m, _, shutdown := newTestMachine(t)
 	defer shutdown()
 	const timeout = 2 * time.Second
-	ctx, _ := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	err := m.Call(ctx, "Supervisor.Hang", struct{}{}, nil)
 	if got, want := err, context.DeadlineExceeded; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
+	cancel()
 }
 
 func TestMachineContext(t *testing.T) {
