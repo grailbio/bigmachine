@@ -51,35 +51,19 @@ func binary() (io.ReadCloser, error) {
 
 // Supervisor is the system service installed on every machine.
 type Supervisor struct {
-	b                    *B
-	system               System
-	server               *rpc.Server
-	nextc                chan time.Time
-	saveFds              map[int]int
-	stdoutTee, stderrTee *tee
-	healthy              uint32
+	b       *B
+	system  System
+	server  *rpc.Server
+	nextc   chan time.Time
+	healthy uint32
 }
 
 // StartSupervisor starts a new supervisor based on the provided arguments.
-// The redirect parameter determines whether the supervisor should capture
-// the process's standard IO for calls to Supervisor.Tail.
-func StartSupervisor(b *B, system System, server *rpc.Server, redirect bool) *Supervisor {
+func StartSupervisor(b *B, system System, server *rpc.Server) *Supervisor {
 	s := &Supervisor{
-		b:       b,
-		system:  system,
-		server:  server,
-		saveFds: make(map[int]int),
-	}
-	if redirect {
-		var err error
-		s.stderrTee, err = s.teeFd(syscall.Stderr, "/dev/stderr")
-		if err != nil {
-			log.Error.Printf("failed to tee stderr: %v", err)
-		}
-		s.stdoutTee, err = s.teeFd(syscall.Stdout, "/dev/stdout")
-		if err != nil {
-			log.Error.Printf("failed to tee stdout: %v", err)
-		}
+		b:      b,
+		system: system,
+		server: server,
 	}
 	s.healthy = 1
 	s.nextc = make(chan time.Time)
@@ -164,37 +148,7 @@ func (s *Supervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) erro
 		return err
 	}
 	log.Printf("exec %s %s", path, strings.Join(os.Args, " "))
-	// Restore original fds so that that they can be re-duped again
-	// by our replacement.
-	for orig, save := range s.saveFds {
-		if err := syscall.Dup2(save, orig); err != nil {
-			log.Error.Printf("dup2 %d %d: %v", save, orig, err)
-		}
-		if err := syscall.Close(save); err != nil {
-			log.Error.Printf("close %d: %v", save, err)
-		}
-	}
 	return syscall.Exec(path, os.Args, os.Environ())
-}
-
-// Tail returns a readcloser to which the output of the argument
-// file descriptor is copied. This can be used to write standard
-// output and error to the console of another machine.
-func (s *Supervisor) Tail(ctx context.Context, fd int, rc *io.ReadCloser) error {
-	var tee *tee
-	switch fd {
-	case syscall.Stdout:
-		tee = s.stdoutTee
-	case syscall.Stderr:
-		tee = s.stderrTee
-	}
-	if tee == nil {
-		return fmt.Errorf("cannot tail fd %d", fd)
-	}
-	r, w := io.Pipe()
-	tee.Tee(w)
-	*rc = rpc.Flush(r)
-	return nil
 }
 
 // Ping replies immediately with the sequence number provided.
@@ -384,6 +338,7 @@ func (s *Supervisor) watchdog() {
 		case next = <-s.nextc:
 		}
 		if time.Since(next) > time.Duration(0) {
+			log.Error.Print("Watchdog expiration: next=%v", next.Format(time.RFC3339))
 			s.system.Exit(1)
 		}
 		if time.Since(lastMemProfile) > memProfilePeriod {
@@ -404,32 +359,6 @@ func (s *Supervisor) watchdog() {
 	}
 }
 
-// TeeFd redirects the fd to a tee that is returned. The original fd
-// is added to the tee. Not thread safe: should only be called during
-// initialization.
-func (s *Supervisor) teeFd(fd int, name string) (*tee, error) {
-	savefd, err := syscall.Dup(fd)
-	if err != nil {
-		return nil, err
-	}
-	r, w, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Dup2(int(w.Fd()), fd); err != nil {
-		return nil, err
-	}
-	s.saveFds[fd] = savefd
-	tee := newTee(maxTeeBuffer)
-	tee.Tee(os.NewFile(uintptr(savefd), name))
-	go func() {
-		_, err := io.Copy(tee, r)
-		if err != nil {
-			log.Error.Printf("tee %d %s: %v", fd, name, err)
-		}
-	}()
-	return tee, nil
-}
 func isContextAliveFor(ctx context.Context, dur time.Duration) bool {
 	deadline, ok := ctx.Deadline()
 	if !ok {

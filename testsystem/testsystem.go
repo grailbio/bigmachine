@@ -88,7 +88,7 @@ func (s *System) Start(_ context.Context, count int) ([]*bigmachine.Machine, err
 	machines := make([]*bigmachine.Machine, count)
 	for i := range machines {
 		server := rpc.NewServer()
-		server.Register("Supervisor", bigmachine.StartSupervisor(s.b, s, server, false))
+		server.Register("Supervisor", bigmachine.StartSupervisor(s.b, s, server))
 		index := atomic.AddUint64(&s.index, 1)
 		path := "/" + fmt.Sprint(index)
 		s.mux.Handle(path+bigmachine.RpcPrefix, server)
