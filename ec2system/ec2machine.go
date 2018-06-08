@@ -26,6 +26,8 @@ package ec2system
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"encoding/base64"
 	"flag"
@@ -50,7 +52,9 @@ import (
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
 	"github.com/grailbio/bigmachine"
+	"github.com/grailbio/bigmachine/bigioutil"
 	"github.com/grailbio/bigmachine/ec2system/instances"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/http2"
 )
 
@@ -138,6 +142,8 @@ type System struct {
 	// with the contents of $HOME/.ssh/id_rsa.pub, if it exists.
 	SshKeys []string
 
+	privateKey *rsa.PrivateKey
+
 	config instances.Type
 
 	ec2 ec2iface.EC2API
@@ -197,6 +203,22 @@ func (s *System) Init(b *bigmachine.B) error {
 	if s.config.Price[s.Region] == 0 {
 		return fmt.Errorf("instance type %q not available in region %s", s.InstanceType, s.Region)
 	}
+
+	// Generate a unique SSH key for this session. This is used for programatic
+	// SSH access to created machines.
+	//
+	// TODO(marius): can we add the private key to the user's ssh-agent?
+	var err error
+	s.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
+	publicKey, err := ssh.NewPublicKey(&s.privateKey.PublicKey)
+	if err != nil {
+		return err
+	}
+	s.SshKeys = append(s.SshKeys, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(publicKey))))
+
 	sshkeyPath := os.ExpandEnv("$HOME/.ssh/id_rsa.pub")
 	sshKey, err := ioutil.ReadFile(sshkeyPath)
 	if err == nil {
@@ -417,6 +439,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		machines[i] = new(bigmachine.Machine)
 		machines[i].Addr = fmt.Sprintf("https://%s:%d/", *instance.PublicDnsName, port)
 		machines[i].Maxprocs = int(s.config.VCPU)
+		go s.tail(*instance.PublicDnsName)
 	}
 	return machines, nil
 }
@@ -649,6 +672,63 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 // Exit terminates the process with the given exit code.
 func (s *System) Exit(code int) {
 	os.Exit(code)
+}
+
+func (s *System) dialSSH(addr string) (*ssh.Client, error) {
+	signer, err := ssh.NewSignerFromKey(s.privateKey)
+	if err != nil {
+		return nil, err
+	}
+	config := &ssh.ClientConfig{
+		User:            "core",
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
+	}
+	return ssh.Dial("tcp", addr+":22", config)
+}
+
+var sshRetryPolicy = retry.Backoff(time.Second, 10*time.Second, 1.5)
+
+// Tail copies the output from the bigmachine process on the machine
+// at the provided address. The machine should have been booted by
+// the same System instance. Each line of output is prefixed with the
+// address.
+func (s *System) tail(addr string) {
+	for retries := 0; ; retries++ {
+		err := s.tailBootmachine(addr)
+		if err == nil {
+			retries = 0
+			continue
+		}
+		log.Error.Printf("tail %v: %v", addr, err)
+		if strings.HasPrefix(err.Error(), "ssh: unable to authenticate") {
+			return
+		}
+		if _, ok := err.(*ssh.ExitError); ok {
+			return
+		}
+		if err := retry.Wait(context.Background(), sshRetryPolicy, retries); err != nil {
+			log.Error.Printf("tail %v: %v", addr, err)
+		}
+	}
+}
+
+func (s *System) tailBootmachine(addr string) error {
+	conn, err := s.dialSSH(addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	sess, err := conn.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close()
+	prefix := addr + ": "
+	sess.Stdout = bigioutil.PrefixWriter(os.Stdout, prefix)
+	sess.Stderr = bigioutil.PrefixWriter(os.Stderr, prefix)
+	return sess.Run("journalctl --output=cat -u bootmachine -f")
 }
 
 // Shutdown is a no-op.

@@ -86,6 +86,7 @@ import (
 	"math/big"
 	"math/rand"
 	"net/http"
+	_ "net/http/pprof"
 	"sync/atomic"
 
 	"github.com/grailbio/base/log"

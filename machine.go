@@ -5,7 +5,6 @@
 package bigmachine
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,8 +12,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
-	"regexp"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -42,9 +39,6 @@ const numKeepaliveReplyTimes = 10
 // Thus, we can check that are talking to the actual intended
 // instance and not just another machine that happens to run on the
 // same address.
-
-// OutputMu is used to safely interleave tail output from multiple machines.
-var outputMu sync.Mutex
 
 // RetryPolicy is the default retry policy used for machine calls.
 var retryPolicy = retry.Backoff(time.Second, 5*time.Second, 1.5)
@@ -358,11 +352,6 @@ func (m *Machine) loop() {
 	// Switch to running state now that all of the services are registered.
 	m.setState(Running)
 
-	go func() {
-		if err := m.tail(ctx); err != nil {
-			log.Error.Printf("tail %s: %v; no longer receiving logs from machine", m.Addr, err)
-		}
-	}()
 	const keepalive = 5 * time.Minute
 	for {
 		start := time.Now()
@@ -410,50 +399,6 @@ func (m *Machine) loop() {
 			return
 		}
 	}
-}
-
-func (m *Machine) tail(ctx context.Context) error {
-	re := regexp.MustCompile("https?://([^:]+)")
-	s := re.FindStringSubmatch(m.Addr)
-	if len(s) == 0 {
-		panic(m.Addr)
-	}
-	host := s[1]
-	log.Debug.Printf("Tailing from %s", host)
-	r, w := io.Pipe()
-	go func() {
-		for retries := 0; ; retries++ {
-			cmd := exec.Command("ssh",
-				"-o", "StrictHostKeyChecking=no",
-				"-o", "UserKnownHostsFile=/dev/null",
-				"-o", "ServerAliveInterval=30",
-				"-o", "ServerAliveCountMax=4",
-				"core@"+host, "journalctl", "-f", "--output=cat", "-u", "bootmachine")
-			cmd.Stdout = w
-			cmd.Stderr = w
-			err := cmd.Run()
-			log.Printf("Tail %s: %s. retrying (%d)", host, err, retries)
-			if err := retry.Wait(ctx, retryPolicy, retries); err != nil {
-				log.Printf("Tail %s: exiting: %v", host, err)
-				break
-			}
-		}
-		w.Close()
-	}()
-	re = regexp.MustCompile("^.*bootmachine\\[\\d+\\]:(.*)")
-	sc := bufio.NewScanner(r)
-	for sc.Scan() {
-		line := sc.Text()
-		match := re.FindStringSubmatch(line)
-		if len(match) == 0 {
-			fmt.Printf("%s: %s [unparsed]\n", m.Addr, line)
-		} else {
-			outputMu.Lock()
-			fmt.Printf("%s: %s\n", m.Addr, match[1])
-			outputMu.Unlock()
-		}
-	}
-	return nil
 }
 
 func (m *Machine) ping(ctx context.Context, maxtime time.Duration) error {

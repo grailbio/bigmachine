@@ -14,6 +14,7 @@ import (
 	"os/exec"
 
 	"github.com/grailbio/base/log"
+	"github.com/grailbio/bigmachine/bigioutil"
 )
 
 // Local is a System that insantiates machines by
@@ -35,13 +36,16 @@ func (localSystem) Name() string {
 func (localSystem) Start(ctx context.Context, count int) ([]*Machine, error) {
 	machines := make([]*Machine, count)
 	for i := range machines {
-		cmd := exec.Command(os.Args[0], os.Args[1:]...)
-		cmd.Env = os.Environ()
-		cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
 		port, err := getFreeTCPPort()
 		if err != nil {
 			return nil, err
 		}
+		prefix := fmt.Sprintf("localhost:%d: ", port)
+		cmd := exec.Command(os.Args[0], os.Args[1:]...)
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
+		cmd.Stdout = bigioutil.PrefixWriter(os.Stdout, prefix)
+		cmd.Stderr = bigioutil.PrefixWriter(os.Stderr, prefix)
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=:%d", port))
 
 		m := new(Machine)
