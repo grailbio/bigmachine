@@ -44,6 +44,10 @@ type System struct {
 	// Machineprocs is the number of procs per machine.
 	Machineprocs int
 
+	// The following can optionally be specified to customize the behavior
+	// of Bigmachine's keepalive mechanism.
+	KeepalivePeriod, KeepaliveTimeout, KeepaliveRpcTimeout time.Duration
+
 	done   chan struct{}
 	b      *bigmachine.B
 	exited bool
@@ -197,9 +201,15 @@ func (s *System) Maxprocs() int {
 	return s.Machineprocs
 }
 
-func (*System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
-	period = time.Minute
-	timeout = 2 * time.Minute
-	rpcTimeout = 10 * time.Second
+func (s *System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
+	if period = s.KeepalivePeriod; period == 0 {
+		period = time.Minute
+	}
+	if timeout = s.KeepaliveTimeout; timeout == 0 {
+		timeout = 2 * time.Minute
+	}
+	if rpcTimeout = s.KeepaliveRpcTimeout; rpcTimeout == 0 {
+		rpcTimeout = 10 * time.Second
+	}
 	return
 }
