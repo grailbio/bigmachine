@@ -300,7 +300,7 @@ func (m *Machine) loop() {
 		// If we're the owner, loop is called after the machine was started
 		// by the underlying system. We first wait for the machine to come
 		// up (we give it 2 minutes).
-		if err := m.ping(ctx, 2*time.Minute); err != nil {
+		if err := m.ping(ctx); err != nil {
 			m.setError(err)
 			return
 		}
@@ -324,7 +324,7 @@ func (m *Machine) loop() {
 			return
 		}
 	}
-	if err := m.ping(ctx, 2*time.Minute); err != nil {
+	if err := m.ping(ctx); err != nil {
 		m.setError(err)
 		return
 	}
@@ -334,7 +334,7 @@ func (m *Machine) loop() {
 		// (up or down) by maintaining a period ping.
 		m.setState(Running)
 		for {
-			if err := m.ping(ctx, 2*time.Minute); err != nil {
+			if err := m.ping(ctx); err != nil {
 				m.errorf("ping failed: %v", err)
 				return
 			}
@@ -409,8 +409,8 @@ func (m *Machine) loop() {
 	}
 }
 
-func (m *Machine) ping(ctx context.Context, maxtime time.Duration) error {
-	return m.retryCall(ctx, maxtime, 25*time.Second, "Supervisor.Ping", 0, nil)
+func (m *Machine) ping(ctx context.Context) error {
+	return m.retryCall(ctx, 9*time.Minute, 3*time.Minute, "Supervisor.Ping", 0, nil)
 }
 
 // Context returns a new derived context that is canceled whenever
