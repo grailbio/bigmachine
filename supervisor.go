@@ -340,7 +340,7 @@ func (s *Supervisor) watchdog(ctx context.Context) {
 			return
 		}
 		if time.Since(next) > time.Duration(0) {
-			log.Error.Print("Watchdog expiration: next=%v", next.Format(time.RFC3339))
+			log.Error.Printf("Watchdog expiration: next=%s", next.Format(time.RFC3339))
 			s.system.Exit(1)
 		}
 		if time.Since(lastMemProfile) > memProfilePeriod {
@@ -353,7 +353,7 @@ func (s *Supervisor) watchdog(ctx context.Context) {
 			if used := vm.UsedPercent; used <= 95 {
 				atomic.StoreUint32(&s.healthy, 1)
 			} else {
-				log.Error.Printf("using %d%% of system memory; marking machine unhealthy", used)
+				log.Error.Printf("using %.1f%% of system memory; marking machine unhealthy", used)
 				atomic.StoreUint32(&s.healthy, 0)
 			}
 			lastMemProfile = time.Now()
