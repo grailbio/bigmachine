@@ -393,6 +393,9 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			binary = filepath.Base(os.Args[0])
 			tag    = fmt.Sprintf("%s(%s) %s (bigmachine)", binary, info.Digest.Short(), strings.Join(os.Args[1:], " "))
 		)
+		if len(tag) > 250 { // EC2 tags are limited to 255 characters.
+			tag = tag[:250] + "..."
+		}
 		_, err := s.ec2.CreateTags(&ec2.CreateTagsInput{
 			Resources: instanceIdsp,
 			Tags: []*ec2.Tag{
