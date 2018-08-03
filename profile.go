@@ -121,6 +121,7 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		prof, err := profile.Parse(bytes.NewReader(b))
 		if err != nil {
 			log.Error.Printf("failed to parse profile from %s: %v", m.Addr, err)
+			continue
 		}
 		parsed = append(parsed, prof)
 	}
