@@ -142,6 +142,9 @@ type System struct {
 	// with the contents of $HOME/.ssh/id_rsa.pub, if it exists.
 	SshKeys []string
 
+	// The user running the application. For tagging.
+	Username string
+
 	privateKey *rsa.PrivateKey
 
 	config instances.Type
@@ -391,7 +394,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		var (
 			info   = bigmachine.LocalInfo()
 			binary = filepath.Base(os.Args[0])
-			tag    = fmt.Sprintf("%s(%s) %s (bigmachine)", binary, info.Digest.Short(), strings.Join(os.Args[1:], " "))
+			tag    = fmt.Sprintf("%s:%s(%s) %s (bigmachine)", s.Username, binary, info.Digest.Short(), strings.Join(os.Args[1:], " "))
 		)
 		if len(tag) > 250 { // EC2 tags are limited to 255 characters.
 			tag = tag[:250] + "..."

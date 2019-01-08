@@ -331,7 +331,7 @@ func (m *Machine) loop() {
 
 	if !m.owner {
 		// If we're not the owner, we maintain machine state
-		// (up or down) by maintaining a period ping.
+		// (up or down) by maintaining a periodic ping.
 		m.setState(Running)
 		for {
 			if err := m.ping(ctx); err != nil {
