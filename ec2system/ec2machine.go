@@ -91,6 +91,17 @@ func init() {
 // Instance is a default ec2machine System.
 var Instance = new(System)
 
+// A Flavor is the flavor of operating system used in the system.
+// The system flavor adjusts for local variations in setup.
+type Flavor int
+
+const (
+	// CoreOS indicates that the AMI is based on CoreOS.
+	CoreOS Flavor = iota
+	// Ubuntu indicates that the AMI is based on Ubuntu.
+	Ubuntu
+)
+
 // System implements a bigmachine system for EC2 instances.
 // See package docs for more details.
 type System struct {
@@ -105,6 +116,9 @@ type System struct {
 	// cloud config and use systemd. The default AMI is a recent stable CoreOS
 	// build.
 	AMI string
+
+	// Flavor is the operating system flavor of the AMI.
+	Flavor Flavor
 
 	// Region is the AWS region in which to launch the system's instances.
 	// It defaults to us-west-2.
@@ -465,14 +479,25 @@ func (s *System) sliceConfig() (nslice int, sliceSize int64) {
 func (s *System) cloudConfig() *cloudConfig {
 	c := new(cloudConfig)
 	c.SshAuthorizedKeys = s.SshKeys
-	// Turn off rebooting, updating, and locksmithd, all of which can
-	// cause the instance to reboot. These are ephemeral instances and
-	// we're not interested in these updates. (The AMI should be kept up to
-	// date however.)
-	c.CoreOS.Update.RebootStrategy = "off"
-	c.AppendUnit(cloudUnit{Name: "update-engine.service", Command: "stop"})
-	c.AppendUnit(cloudUnit{Name: "locksmithd.service", Command: "stop"})
-	var dataDeviceName string
+	c.Flavor = s.Flavor
+
+	if s.Flavor == CoreOS {
+		// Turn off rebooting, updating, and locksmithd, all of which can
+		// cause the instance to reboot. These are ephemeral instances and
+		// we're not interested in these updates. (The AMI should be kept up to
+		// date however.)
+		c.CoreOS.Update.RebootStrategy = "off"
+		c.AppendUnit(cloudUnit{Name: "update-engine.service", Command: "stop"})
+		c.AppendUnit(cloudUnit{Name: "locksmithd.service", Command: "stop"})
+	}
+
+	var (
+		// DataDeviceName is the device (possibly striped) that should be used
+		// for the data partition.
+		dataDeviceName string
+		// Devices is all the devices used to compose storage.
+		devices []string
+	)
 	switch nslice, _ := s.sliceConfig(); nslice {
 	case 0:
 	case 1:
@@ -492,13 +517,13 @@ func (s *System) cloudConfig() *cloudConfig {
 			[Service]
 			Type=oneshot
 			RemainAfterExit=yes
-			ExecStart=/usr/sbin/wipefs -f /dev/{{.name}}
-			ExecStart=/usr/sbin/mkfs.ext4 -F /dev/{{.name}}
+			ExecStart=/usr/bin/env wipefs -f /dev/{{.name}}
+			ExecStart=/usr/bin/env mkfs.ext4 -F /dev/{{.name}}
 		`, args{"name": dataDeviceName}),
 		})
 	default:
 		dataDeviceName = "md0"
-		devices := make([]string, nslice)
+		devices = make([]string, nslice)
 		// Remap names for NVMe instances.
 		for idx := range devices {
 			if s.config.NVMe {
@@ -518,8 +543,8 @@ func (s *System) cloudConfig() *cloudConfig {
 			[Service]
 			Type=oneshot
 			RemainAfterExit=yes
-			ExecStart=/usr/sbin/mdadm --create --run --verbose /dev/{{.md}} --level=0 --chunk=256 --name=bigmachine --raid-devices={{.devices|len}} {{range $_, $name := .devices}}/dev/{{$name}} {{end}}
-			ExecStart=/usr/sbin/mkfs.ext4 -F /dev/{{.md}}
+			ExecStart=/usr/bin/env mdadm --create --run --verbose /dev/{{.md}} --level=0 --chunk=256 --name=bigmachine --raid-devices={{.devices|len}} {{range $_, $name := .devices}}/dev/{{$name}} {{end}}
+			ExecStart=/usr/bin/env mkfs.ext4 -F /dev/{{.md}}
 		`, args{"devices": devices, "md": dataDeviceName}),
 		})
 	}
@@ -528,6 +553,9 @@ func (s *System) cloudConfig() *cloudConfig {
 			Name:    "mnt-data.mount",
 			Command: "start",
 			Content: tmpl(`
+			[Unit]
+			After=format-{{.name}}.service
+			Requires=format-{{.name}}.service
 			[Mount]
 			What=/dev/{{.name}}
 			Where=/mnt/data
@@ -535,8 +563,29 @@ func (s *System) cloudConfig() *cloudConfig {
 			Options=data=writeback
 		`, args{"name": dataDeviceName}),
 		})
+
+		// In this case we have to explicitly remove devices from the
+		// cloud-init config so that these are not added automatically
+		// added to the fstab by cloud-init. A single-argument mount
+		// spec disables the mount.
+		if s.Flavor == Ubuntu {
+			c.AppendMount([]string{dataDeviceName})
+			for _, dev := range devices {
+				c.AppendMount([]string{dev})
+			}
+		}
 	}
 
+	// The bootmachine service runs the bootmachine script set up
+	// previously. By default, the machine is shut down when the
+	// bootmachine program terminates for any reason. This is the
+	// mechanism of (automatic) instance termination.
+	//
+	// If we have a data disk, set TMPDIR to it.
+	var environ string
+	if dataDeviceName != "" {
+		environ = "Environment=TMPDIR=/mnt/data"
+	}
 	// Increase the open-file limit. The reduce shuffle opens many
 	// filedescriptors.
 	const nropen = 32 << 20    // per-process limit
@@ -573,15 +622,10 @@ func (s *System) cloudConfig() *cloudConfig {
 		Path:        authorityPath,
 		Content:     string(s.authorityContents),
 	})
-	// The bootmachine service runs the bootmachine script set up
-	// previously. By default, the machine is shut down when the
-	// bootmachine program terminates for any reason. This is the
-	// mechanism of (automatic) instance termination.
-	//
-	// If we have a data disk, set TMPDIR to it.
-	var environ string
-	if dataDeviceName != "" {
-		environ = "Environment=TMPDIR=/mnt/data"
+
+	sysctlPath := "/lib/systemd/systemd-sysctl"
+	if s.Flavor == CoreOS {
+		sysctlPath = "/usr/lib/systemd/systemd-sysctl"
 	}
 	c.AppendUnit(cloudUnit{
 		Name:    "update-sysctl.service",
@@ -591,8 +635,8 @@ func (s *System) cloudConfig() *cloudConfig {
 			[Unit]
 			Description=Update sysctl
 			[Service]
-			ExecStart=/usr/lib/systemd/systemd-sysctl /etc/sysctl.d/90-bigmachine
-		`, args{}),
+			ExecStart={{.sysctlPath}} /etc/sysctl.d/90-bigmachine
+		`, args{"sysctlPath": sysctlPath}),
 	})
 
 	// Note: LimitNOFILE must be set explicitly, instead of just "infinity", since
@@ -607,6 +651,10 @@ func (s *System) cloudConfig() *cloudConfig {
 			Description=bootmachine
 			Requires=network.target
 			After=network.target
+			{{if .data}}
+			After=mnt-data.mount
+			Requires=mnt-data.mount
+			{{end}}
 			{{if .mortal}}
 			OnFailure=poweroff.target
 			OnFailureJobMode=replace-irreversibly
@@ -616,7 +664,7 @@ func (s *System) cloudConfig() *cloudConfig {
 			LimitNOFILE={{.nropen}}
 			{{.environ}}
 			ExecStart=/opt/bin/bootmachine
-		`, args{"mortal": !*immortal, "environ": environ, "nropen": nropen}),
+		`, args{"mortal": !*immortal, "environ": environ, "nropen": nropen, "data": dataDeviceName != ""}),
 	})
 	return c
 }
@@ -686,10 +734,17 @@ func (s *System) dialSSH(addr string) (*ssh.Client, error) {
 		return nil, err
 	}
 	config := &ssh.ClientConfig{
-		User:            "core",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         5 * time.Second,
+	}
+	switch s.Flavor {
+	case CoreOS:
+		config.User = "core"
+	case Ubuntu:
+		config.User = "ubuntu"
+	default:
+		config.User = "root"
 	}
 	return ssh.Dial("tcp", addr+":22", config)
 }

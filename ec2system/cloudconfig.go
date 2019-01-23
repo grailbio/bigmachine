@@ -4,7 +4,12 @@
 
 package ec2system
 
-import yaml "gopkg.in/yaml.v2"
+import (
+	"fmt"
+	"path"
+
+	yaml "gopkg.in/yaml.v2"
+)
 
 type cloudFile struct {
 	Path        string `yaml:"path,omitempty"`
@@ -18,12 +23,19 @@ type cloudUnit struct {
 	Command string `yaml:"command,omitempty"`
 	Enable  bool   `yaml:"enable,omitempty"`
 	Content string `yaml:"content,omitempty"`
+
+	// Sync determines whether the command should be run synchronously.
+	Sync bool `yaml:"-"`
 }
 
-// cloudConfig represents a cloud cloud configuration as
-// accepted by CoreOS. It can be incrementally defined and
-// then rendered by its Marshal method.
+// cloudConfig represents a cloud cloud configuration as accepted by
+// cloud-init. CloudConfigs can be incrementally defined and then
+// rendered by its Marshal method.
 type cloudConfig struct {
+	// Flavor indicates the flavor of cloud-config; it determines
+	// how Systemd units are processed before serialization.
+	Flavor Flavor `yaml:"-"`
+
 	WriteFiles []cloudFile `yaml:"write_files,omitempty"`
 	CoreOS     struct {
 		Update struct {
@@ -31,7 +43,14 @@ type cloudConfig struct {
 		} `yaml:"update,omitempty"`
 		Units []cloudUnit `yaml:"units,omitempty"`
 	} `yaml:"coreos,omitempty"`
-	SshAuthorizedKeys []string `yaml:"ssh-authorized-keys,omitempty"`
+	SshAuthorizedKeys []string `yaml:"ssh_authorized_keys,omitempty"`
+
+	// RunCmd stores a list of cloud-init run commands.
+	RunCmd []string `yaml:"runcmd,omitempty"`
+	// Mounts stores a list of cloud-init mounts.
+	Mounts [][]string `yaml:"mounts,omitempty"`
+
+	units []cloudUnit
 }
 
 // Merge merges cloudConfig d into c. List entries from c are
@@ -43,8 +62,8 @@ func (c *cloudConfig) Merge(d *cloudConfig) {
 	if s := d.CoreOS.Update.RebootStrategy; s != "" {
 		c.CoreOS.Update.RebootStrategy = s
 	}
-	for _, u := range d.CoreOS.Units {
-		c.CoreOS.Units = append(c.CoreOS.Units, u)
+	for _, u := range d.units {
+		c.units = append(c.units, u)
 	}
 	for _, k := range d.SshAuthorizedKeys {
 		c.SshAuthorizedKeys = append(c.SshAuthorizedKeys, k)
@@ -58,13 +77,50 @@ func (c *cloudConfig) AppendFile(f cloudFile) {
 
 // AppendUnit appends the systemd unit u to the cloudConfig c.
 func (c *cloudConfig) AppendUnit(u cloudUnit) {
-	c.CoreOS.Units = append(c.CoreOS.Units, u)
+	c.units = append(c.units, u)
+}
+
+// AppendRunCmd appends a run command to the cloud config.
+// Note that run commands are only respected in the Ubuntu
+// flavor.
+func (c *cloudConfig) AppendRunCmd(cmd string) {
+	c.RunCmd = append(c.RunCmd, cmd)
+}
+
+// AppendMount appends a mount spec. Note that mounts are
+// only respected in the Ubuntu flavor.
+func (c *cloudConfig) AppendMount(mount []string) {
+	c.Mounts = append(c.Mounts, mount)
 }
 
 // Marshal renders the cloudConfig into YAML, with the prerequisite
 // cloud-config header.
 func (c *cloudConfig) Marshal() ([]byte, error) {
-	b, err := yaml.Marshal(c)
+	var copy cloudConfig
+	copy = *c
+	if c.Flavor == CoreOS {
+		copy.CoreOS.Units = c.units
+	} else {
+		if len(c.units) > 0 {
+			copy.RunCmd = append(copy.RunCmd, "systemctl daemon-reload")
+		}
+		for _, u := range c.units {
+			if u.Content != "" {
+				copy.AppendFile(cloudFile{
+					Path:        path.Join("/etc/systemd/system", u.Name),
+					Permissions: "0644",
+					Content:     u.Content,
+				})
+			}
+			if u.Sync {
+				copy.RunCmd = append(copy.RunCmd, fmt.Sprintf("systemctl %s %s", u.Command, u.Name))
+			} else {
+				copy.RunCmd = append(copy.RunCmd, fmt.Sprintf("systemctl --no-block %s %s", u.Command, u.Name))
+			}
+		}
+	}
+
+	b, err := yaml.Marshal(copy)
 	if err != nil {
 		return nil, err
 	}

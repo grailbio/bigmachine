@@ -11,11 +11,12 @@ import (
 
 func TestCloudconfig(t *testing.T) {
 	var c cloudConfig
+	c.Flavor = CoreOS
 	c.CoreOS.Update.RebootStrategy = "off"
 	c.AppendFile(cloudFile{"/tmp/x", "0644", "root", "a test file"})
-	c.AppendUnit(cloudUnit{"reflowlet", "command", true, "unit content"})
+	c.AppendUnit(cloudUnit{Name: "reflowlet", Command: "command", Enable: true, Content: "unit content"})
 	var d cloudConfig
-	d.AppendUnit(cloudUnit{"xxx", "xxxcommand", false, "xxx content"})
+	d.AppendUnit(cloudUnit{Name: "xxx", Command: "xxxcommand", Enable: false, Content: "xxx content"})
 	d.AppendFile(cloudFile{"/tmp/myfile", "0644", "root", "another test file"})
 	c.Merge(&d)
 	out, err := c.Marshal()
@@ -44,6 +45,6 @@ coreos:
     command: xxxcommand
     content: xxx content
 `); !bytes.Equal(got, want) {
-		t.Errorf("got %q, want %q", got, want)
+		t.Errorf("got %s, want %s", got, want)
 	}
 }

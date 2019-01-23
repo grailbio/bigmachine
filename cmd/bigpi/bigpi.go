@@ -120,6 +120,7 @@ func (circlePI) Sample(ctx context.Context, n uint64, m *uint64) error {
 func main() {
 	nsamples := flag.Int("n", 1e10, "number of samples to make")
 	nmachine := flag.Int("nmach", 5, "number of machines to provision for the task")
+	log.AddFlags()
 	flag.Parse()
 	b := driver.Start()
 	defer b.Shutdown()
