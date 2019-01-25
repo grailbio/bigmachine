@@ -92,9 +92,7 @@ func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, shutd
 	}
 	m.start(nil)
 	return m, supervisor, func() {
-		if m.cancel != nil {
-			m.cancel()
-		}
+		m.Cancel()
 		select {
 		case <-m.Wait(Stopped):
 		case <-time.After(time.Second):

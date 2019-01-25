@@ -234,6 +234,12 @@ func (m *Machine) LoadInfo(ctx context.Context) (info LoadInfo, err error) {
 	return
 }
 
+// Cancel cancels all pending operations on machine m. The machine
+// is stopped with an error of context.Canceled.
+func (m *Machine) Cancel() {
+	m.cancel()
+}
+
 // Err returns a machine's error. Err is only well-defined when the machine
 // is in Stopped state.
 func (m *Machine) Err() error {
@@ -251,7 +257,12 @@ func (m *Machine) start(b *B) {
 		m.keepalivePeriod, m.keepaliveTimeout, m.keepaliveRpcTimeout = b.System().KeepaliveConfig()
 	}
 	m.cancelers = make(map[canceler]struct{})
-	go m.loop()
+	ctx := context.Background()
+	ctx, m.cancel = context.WithCancel(ctx)
+	go func() {
+		m.loop(ctx)
+		m.cancel()
+	}()
 }
 
 func (m *Machine) setError(err error) {
@@ -291,11 +302,8 @@ func (m *Machine) setState(s State) {
 	}
 }
 
-func (m *Machine) loop() {
+func (m *Machine) loop(ctx context.Context) {
 	m.setState(Starting)
-	ctx := context.Background()
-	ctx, m.cancel = context.WithCancel(ctx)
-	defer m.cancel()
 	if m.owner && !m.NoExec {
 		// If we're the owner, loop is called after the machine was started
 		// by the underlying system. We first wait for the machine to come
