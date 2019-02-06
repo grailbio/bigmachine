@@ -64,6 +64,10 @@ import (
 // and should be reconstructed by the client.
 const methodErrorCode = 590
 
+// BigmachineErrorTrailer is the HTTP trailer used to
+// indicate streaming errors.
+const bigmachineErrorTrailer = "x-bigmachine-error"
+
 var (
 	typeOfContext    = reflect.TypeOf((*context.Context)(nil)).Elem()
 	typeOfReader     = reflect.TypeOf((*io.Reader)(nil)).Elem()
@@ -260,6 +264,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if readcloser != nil {
 		defer readcloser.Close()
 		w.Header().Set("Content-Type", "application/octet-stream")
+		// We pre-declare a trailer so that we can indicate if we encountered an error
+		// while streaming.
+		w.Header().Set("Trailer", bigmachineErrorTrailer)
 		w.WriteHeader(code)
 		var wr io.Writer = w
 		if _, needFlush := readcloser.(*flushOpt); needFlush {
@@ -271,7 +278,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := io.Copy(wr, readcloser); err != nil {
 			log.Error.Printf("rpc: error writing reply: %v", err)
-			return // not much we can do here
+			w.Header().Set(bigmachineErrorTrailer, err.Error())
+			return
 		}
 	} else {
 		w.Header().Set("Content-Type", gobContentType)

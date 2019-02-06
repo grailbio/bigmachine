@@ -139,16 +139,15 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		c.resetClient(addr, h.uid)
 		return errors.E(errors.Net, errors.Temporary, err)
 	}
-	respBody := resp.Body
 	if InjectFailures {
-		respBody = &rpcFaultInjector{label: fmt.Sprintf("%s(%s)", serviceMethod, addr), in: respBody}
+		resp.Body = &rpcFaultInjector{label: fmt.Sprintf("%s(%s)", serviceMethod, addr), in: resp.Body}
 	}
 	switch arg := reply.(type) {
 	case *io.ReadCloser:
 		switch resp.StatusCode {
 		case methodErrorCode:
-			dec := gob.NewDecoder(respBody)
-			defer respBody.Close()
+			dec := gob.NewDecoder(resp.Body)
+			defer resp.Body.Close()
 			e := new(errors.Error)
 			if err := dec.Decode(e); err != nil {
 				return errors.E(errors.Invalid, errors.Temporary, "error while decoding error", err)
@@ -156,16 +155,18 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			c.resetClient(addr, h.uid)
 			return e
 		case 200:
-			*arg = respBody
+			// Wrap the actual response in a stream reader so that
+			// errors are propagated properly.
+			*arg = streamReader{resp}
 		default:
-			respBody.Close()
+			resp.Body.Close()
 			c.resetClient(addr, h.uid)
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 		return nil
 	default:
-		defer respBody.Close()
-		dec := gob.NewDecoder(respBody)
+		defer resp.Body.Close()
+		dec := gob.NewDecoder(resp.Body)
 		switch resp.StatusCode {
 		case methodErrorCode:
 			e := new(errors.Error)
@@ -186,4 +187,23 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 	}
+}
+
+// StreamReader reads a bigmachine byte stream, propagating
+// any errors that may be set in a response's trailer.
+type streamReader struct{ *http.Response }
+
+func (r streamReader) Read(p []byte) (n int, err error) {
+	n, err = r.Body.Read(p)
+	if err != io.EOF {
+		return n, err
+	}
+	if e := r.Trailer.Get(bigmachineErrorTrailer); e != "" {
+		err = errors.New(e)
+	}
+	return n, err
+}
+
+func (r streamReader) Close() error {
+	return r.Body.Close()
 }

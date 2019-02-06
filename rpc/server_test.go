@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/grailbio/base/digest"
@@ -89,6 +90,13 @@ func (s *TestStreamService) Echo(ctx context.Context, arg io.Reader, reply *io.R
 	return nil
 }
 
+func (s *TestStreamService) StreamWithError(ctx context.Context, errstr string, reply *io.ReadCloser) error {
+	r, w := io.Pipe()
+	w.CloseWithError(errors.New(errstr))
+	*reply = r
+	return nil
+}
+
 func (s *TestStreamService) Gimme(ctx context.Context, count int, reply *io.ReadCloser) error {
 	r, w := io.Pipe()
 	*reply = r
@@ -147,6 +155,15 @@ func TestStream(t *testing.T) {
 	if !bytes.Equal(b, c) {
 		t.Errorf("got %v, want %v", c, b)
 	}
+
+	// Make sure errors are propagated (both ways).
+	if err := client.Call(ctx, httpsrv.URL, "Stream.StreamWithError", "a series of unfortunate events", &rc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = io.Copy(ioutil.Discard, rc); err == nil || !strings.Contains(err.Error(), "a series of unfortunate events") {
+		t.Errorf("bad error %v", err)
+	}
+	rc.Close()
 
 	var d digest.Digest
 	if err := client.Call(ctx, httpsrv.URL, "Stream.Digest", bytes.NewReader(b), &d); err != nil {
