@@ -40,6 +40,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -51,6 +52,7 @@ import (
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
+	"github.com/grailbio/base/sync/once"
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/bigioutil"
 	"github.com/grailbio/bigmachine/ec2system/instances"
@@ -78,8 +80,16 @@ var retryPolicy = retry.Backoff(time.Second, 10*time.Second, 2)
 
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
 
-// TODO(marius): generate this from the the EC2 inventory JSON instead.
-var instanceTypes map[string]instances.Type
+var (
+	// InstanceTypes stores metadata for each known EC2 instance type.
+	// TODO(marius): generate this from the the EC2 inventory JSON instead.
+	instanceTypes map[string]instances.Type
+
+	// imageInfo stores *ec2.Image values for all known AMIs;
+	// describeImages coordinates retrieval of these values.
+	imageInfo      sync.Map
+	describeImages once.Map
+)
 
 func init() {
 	instanceTypes = make(map[string]instances.Type)
@@ -266,9 +276,37 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cloud-config: %v", err)
 	}
+	err = describeImages.Do(s.AMI, func() error {
+		out, err := s.ec2.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+			ImageIds: []*string{aws.String(s.AMI)},
+		})
+		if err != nil {
+			return err
+		}
+		if len(out.Images) != 1 || aws.StringValue(out.Images[0].ImageId) != s.AMI {
+			return errors.New("image not found")
+		}
+		imageInfo.Store(s.AMI, out.Images[0])
+		return nil
+	})
+	if err != nil {
+		if err == ctx.Err() {
+			describeImages.Forget(s.AMI)
+		}
+		return nil, errors.E("describe-images", s.AMI, err)
+	}
+	infoIface, ok := imageInfo.Load(s.AMI)
+	if !ok {
+		panic(s.AMI)
+	}
+	info := infoIface.(*ec2.Image)
+	rootDeviceName := info.RootDeviceName
+	if rootDeviceName == nil {
+		rootDeviceName = aws.String("/dev/xvda")
+	}
 	blockDevices := []*ec2.BlockDeviceMapping{
 		{
-			DeviceName: aws.String("/dev/xvda"),
+			DeviceName: rootDeviceName,
 			Ebs: &ec2.EbsBlockDevice{
 				DeleteOnTermination: aws.Bool(true),
 				VolumeSize:          aws.Int64(int64(50 + s.Diskspace)),
