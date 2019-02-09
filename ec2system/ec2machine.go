@@ -828,7 +828,7 @@ func (s *System) tailBootmachine(addr string) error {
 	prefix := addr + ": "
 	sess.Stdout = bigioutil.PrefixWriter(os.Stdout, prefix)
 	sess.Stderr = bigioutil.PrefixWriter(os.Stderr, prefix)
-	return sess.Run("sudo journalctl --output=cat  -f")
+	return sess.Run("sudo journalctl --output=cat  -f -u bootmachine")
 }
 
 // Shutdown is a no-op.
