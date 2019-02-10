@@ -96,7 +96,7 @@ func (t *tee) Tee(w io.Writer) {
 	t.mu.Unlock()
 	go func() {
 		_ = tw.Go()
-		// TODO(marius): Log the returner error. The tricky part is that
+		// TODO(marius): Log the returned error. The tricky part is that
 		// logging may trigger a write. Perhaps there should be a
 		// "distinguished writer" to which we can log safely.
 		t.mu.Lock()

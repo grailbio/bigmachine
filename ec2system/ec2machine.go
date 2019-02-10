@@ -56,6 +56,7 @@ import (
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/bigioutil"
 	"github.com/grailbio/bigmachine/ec2system/instances"
+	"github.com/grailbio/bigmachine/internal/authority"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/http2"
 )
@@ -175,7 +176,7 @@ type System struct {
 
 	ec2 ec2iface.EC2API
 
-	authority         *certificateAuthority
+	authority         *authority.T
 	authorityContents []byte
 }
 
@@ -258,7 +259,7 @@ func (s *System) Init(b *bigmachine.B) error {
 		return err
 	}
 	s.ec2 = ec2.New(sess)
-	s.authority, err = newCertificateAuthority(authorityPath)
+	s.authority, err = authority.New(authorityPath)
 	if err != nil {
 		return err
 	}

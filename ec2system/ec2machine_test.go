@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grailbio/bigmachine/internal/authority"
 	"github.com/grailbio/testutil"
 	"golang.org/x/net/http2"
 )
@@ -56,13 +57,13 @@ func TestMutualHTTPS(t *testing.T) {
 	defer cleanup()
 
 	sys := new(System)
-	sys.authority, err = newCertificateAuthority(filepath.Join(temp, "authority"))
+	sys.authority, err = authority.New(filepath.Join(temp, "authority"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Create a second, unrelated authority. Clients from this should not be able
 	// to communicate with the first.
-	authority, err := newCertificateAuthority(filepath.Join(temp, "authority2"))
+	authority, err := authority.New(filepath.Join(temp, "authority2"))
 	if err != nil {
 		t.Fatal(err)
 	}

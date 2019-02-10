@@ -2,9 +2,10 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
-package ec2system
+package authority_test
 
 import (
+	"crypto/rsa"
 	"crypto/x509"
 	"io/ioutil"
 	"net"
@@ -17,15 +18,13 @@ import (
 )
 
 func TestCA(t *testing.T) {
-	name, err := tempFile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(name)
+	name, cleanup := tempFile(t)
+	defer cleanup()
 	ca, err := authority.New(name)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	now := time.Now()
 	ips := []net.IP{net.IPv4(1, 2, 3, 4)}
 	dnses := []string{"test.grail.com"}
@@ -33,6 +32,30 @@ func TestCA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	verify(t, ca, now, certBytes, priv, ips, dnses)
+
+	// Make sure that when we restore the CA, it's still a valid cert.
+	ca, err = authority.New(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verify(t, ca, now, certBytes, priv, ips, dnses)
+}
+
+func TestCAEphemeral(t *testing.T) {
+	ca, err := authority.New("")
+	now := time.Now()
+	ips := []net.IP{net.IPv4(1, 2, 3, 4)}
+	dnses := []string{"test2.grail.com"}
+	certBytes, priv, err := ca.Issue("test", 10*time.Minute, ips, dnses)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verify(t, ca, now, certBytes, priv, ips, dnses)
+}
+
+func verify(t *testing.T, ca *authority.T, now time.Time, certBytes []byte, priv *rsa.PrivateKey, ips []net.IP, dnses []string) {
+	t.Helper()
 	cert, err := x509.ParseCertificate(certBytes)
 	if err != nil {
 		t.Fatal(err)
@@ -52,10 +75,10 @@ func TestCA(t *testing.T) {
 	if got, want := cert.Subject.CommonName, "test"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if got, want := cert.NotBefore, now.Add(-driftMargin); want.Before(got) {
+	if got, want := cert.NotBefore, now.Add(-authority.DriftMargin); want.Before(got) {
 		t.Errorf("wanted %s <= %s", got, want)
 	}
-	if got, want := cert.NotAfter.Sub(cert.NotBefore), 10*time.Minute+driftMargin; got != want {
+	if got, want := cert.NotAfter.Sub(cert.NotBefore), 10*time.Minute+authority.DriftMargin; got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 	if cert.IsCA {
@@ -69,17 +92,20 @@ func TestCA(t *testing.T) {
 	}
 }
 
-func tempFile() (string, error) {
+func tempFile(t *testing.T) (string, func()) {
 	// Test that the CA generates valid certs.
 	f, err := ioutil.TempFile("", "")
 	if err != nil {
-		return "", err
+		t.Fatal(err)
 	}
 	name := f.Name()
 	if err := f.Close(); err != nil {
-		return "", err
+		t.Fatal(err)
 	}
-	return name, os.Remove(name)
+	if err := os.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	return name, func() { os.Remove(name) }
 }
 
 func ipsEqual(x, y []net.IP) bool {

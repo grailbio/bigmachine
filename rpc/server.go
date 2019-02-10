@@ -281,6 +281,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Error.Printf("rpc: error writing reply: %v", err)
 			errStr = err.Error()
 		}
+		// This is required because of a bug in net/http2 that causes the
+		// connection to hang when pre-declared trailers are not set.
 		w.Header().Set(bigmachineErrorTrailer, errStr)
 		return
 	}
