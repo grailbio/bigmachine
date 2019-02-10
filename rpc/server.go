@@ -276,27 +276,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("%s.%s: asked to flush, but HTTP connection does not support flushing", service, method)
 			}
 		}
+		var errStr string
 		if _, err := io.Copy(wr, readcloser); err != nil {
 			log.Error.Printf("rpc: error writing reply: %v", err)
-			w.Header().Set(bigmachineErrorTrailer, err.Error())
-			return
+			errStr = err.Error()
 		}
-	} else {
-		w.Header().Set("Content-Type", gobContentType)
-		if code != 200 {
-			// Only write error codes here so that, if the call is a success
-			// but encoding fails, we have a chance to propagate the error
-			// properly.
-			w.WriteHeader(code)
-		}
-		// TODO: should we buffer the write?
-		enc := gob.NewEncoder(w)
-		if err := enc.Encode(replyIface); err != nil {
-			log.Error.Printf("rpc: error writing reply: %v", err)
-			// May not work, but it's worth a try:
-			http.Error(w, fmt.Sprint(err), 500)
-			return
-		}
+		w.Header().Set(bigmachineErrorTrailer, errStr)
+		return
+	}
+	w.Header().Set("Content-Type", gobContentType)
+	if code != 200 {
+		// Only write error codes here so that, if the call is a success
+		// but encoding fails, we have a chance to propagate the error
+		// properly.
+		w.WriteHeader(code)
+	}
+	// TODO: should we buffer the write?
+	enc := gob.NewEncoder(w)
+	if err := enc.Encode(replyIface); err != nil {
+		log.Error.Printf("rpc: error writing reply: %v", err)
+		// May not work, but it's worth a try:
+		http.Error(w, fmt.Sprint(err), 500)
+		return
 	}
 }
 
