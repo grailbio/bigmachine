@@ -70,6 +70,9 @@ func New() *System {
 	return s
 }
 
+// B returns the bigmachine session associated with this system.
+func (s *System) B() *bigmachine.B { return s.b }
+
 func (s *System) Wait(n int) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

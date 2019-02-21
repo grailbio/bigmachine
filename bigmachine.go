@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+
 	// Sha256 is imported because we use its implementation for
 	// fingerprinting binaries.
 	_ "crypto/sha256"
@@ -61,7 +62,9 @@ func Start(system System) *B {
 	b.run()
 	// Test systems run in a single process space and thus
 	// expvar would panic with duplicate key errors.
-	if system.Name() != "testsystem" {
+	//
+	// TODO(marius): allow multiple sessions to share a single expvar
+	if system.Name() != "testsystem" && expvar.Get("machines") == nil {
 		expvar.Publish("machines", &machineVars{b})
 	}
 	return b
@@ -201,10 +204,16 @@ func (b *B) Machines() []*Machine {
 // HandleDebug registers diagnostic http endpoints on the provided
 // ServeMux.
 func (b *B) HandleDebug(mux *http.ServeMux) {
-	mux.Handle("/debug/bigmachine/pprof/profile", &profileHandler{b, "profile"})
-	mux.Handle("/debug/bigmachine/pprof/heap", &profileHandler{b, "heap"})
-	mux.HandleFunc("/debug/bigmachine/pprof/", b.pprofIndex)
-	mux.Handle("/debug/bigmachine/status", &statusHandler{b})
+	b.HandleDebugPrefix("/debug/bigmachine/", mux)
+}
+
+// HandleDebugPrefix registers diagnostic http endpoints on the provided
+// ServeMux under the provided prefix.
+func (b *B) HandleDebugPrefix(prefix string, mux *http.ServeMux) {
+	mux.Handle(prefix+"pprof/profile", &profileHandler{b, "profile"})
+	mux.Handle(prefix+"pprof/heap", &profileHandler{b, "heap"})
+	mux.HandleFunc(prefix+"pprof/", b.pprofIndex)
+	mux.Handle(prefix+"status", &statusHandler{b})
 }
 
 var indexTmpl = template.Must(template.New("index").Parse(`<html>
