@@ -7,6 +7,7 @@ package bigmachine
 import (
 	"context"
 	"crypto/tls"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -22,6 +23,10 @@ import (
 	"golang.org/x/net/http2"
 )
 
+func init() {
+	gob.Register(new(localSystem))
+}
+
 const maxConcurrentStreams = 20000
 const httpTimeout = 30 * time.Second
 
@@ -32,6 +37,7 @@ var Local System = new(localSystem)
 // LocalSystem implements a System that instantiates machines
 // by creating processes on the local machine.
 type localSystem struct {
+	Gobable           struct{} // to make the struct gob-encodable
 	authorityFilename string
 	authority         *authority.T
 }

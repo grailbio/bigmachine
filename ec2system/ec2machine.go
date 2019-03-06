@@ -30,6 +30,7 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"html/template"
@@ -75,6 +76,8 @@ const (
 	// simple naming.
 	maxInstanceDataVolumes = 25
 )
+
+func init() { gob.Register(new(System)) }
 
 // RetryPolicy is used for EC2 calls.
 var retryPolicy = retry.Backoff(time.Second, 10*time.Second, 2)

@@ -10,6 +10,7 @@ package testsystem
 
 import (
 	"context"
+	"encoding/gob"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,10 @@ import (
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/rpc"
 )
+
+func init() {
+	gob.Register(new(System))
+}
 
 type closeIdleTransport interface {
 	CloseIdleConnections()
