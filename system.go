@@ -6,6 +6,7 @@ package bigmachine
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
 )
@@ -48,4 +49,6 @@ type System interface {
 	// KeepaliveConfig returns the various keepalive timeouts that should
 	// be used to maintain keepalives for machines started by this system.
 	KeepaliveConfig() (period, timeout, rpcTimeout time.Duration)
+	// Tail should tail (follow) machine m's log output to the provided writer.
+	Tail(ctx context.Context, w io.Writer, m *Machine) error
 }

@@ -260,7 +260,12 @@ func (m *Machine) start(b *B) {
 	ctx := context.Background()
 	ctx, m.cancel = context.WithCancel(ctx)
 	go func() {
-		m.loop(ctx)
+		// TODO(marius): fix tests that rely on this.
+		var system System
+		if b != nil {
+			system = b.System()
+		}
+		m.loop(ctx, system)
 		m.cancel()
 	}()
 }
@@ -302,7 +307,7 @@ func (m *Machine) setState(s State) {
 	}
 }
 
-func (m *Machine) loop(ctx context.Context) {
+func (m *Machine) loop(ctx context.Context, system System) {
 	m.setState(Starting)
 	if m.owner && !m.NoExec {
 		// If we're the owner, loop is called after the machine was started
@@ -366,6 +371,15 @@ func (m *Machine) loop(ctx context.Context) {
 
 	// Switch to running state now that all of the services are registered.
 	m.setState(Running)
+
+	if system != nil {
+		go func() {
+			err := system.Tail(ctx, os.Stderr, m)
+			if err != nil && err != context.Canceled {
+				log.Error.Printf("%s: tail: %s", m.Addr, err)
+			}
+		}()
+	}
 
 	const keepalive = 5 * time.Minute
 	for {

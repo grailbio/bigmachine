@@ -11,6 +11,7 @@ package testsystem
 import (
 	"context"
 	"encoding/gob"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -220,4 +221,9 @@ func (s *System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
 		rpcTimeout = 10 * time.Second
 	}
 	return
+}
+
+func (s *System) Tail(ctx context.Context, w io.Writer, m *bigmachine.Machine) error {
+	// Cannot tail test systems since it's the same process.
+	return nil
 }

@@ -34,9 +34,11 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -501,7 +503,6 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		machines[i] = new(bigmachine.Machine)
 		machines[i].Addr = fmt.Sprintf("https://%s:%d/", *instance.PublicDnsName, port)
 		machines[i].Maxprocs = int(s.config.VCPU)
-		go s.tail(*instance.PublicDnsName)
 	}
 	return machines, nil
 }
@@ -770,6 +771,15 @@ func (s *System) Exit(code int) {
 	os.Exit(code)
 }
 
+// Tail forwards the system's standard IO to the provided writer.
+func (s *System) Tail(ctx context.Context, w io.Writer, m *bigmachine.Machine) error {
+	u, err := url.Parse(m.Addr)
+	if err != nil {
+		return err
+	}
+	return s.tail(ctx, u.Hostname(), w)
+}
+
 func (s *System) dialSSH(addr string) (*ssh.Client, error) {
 	signer, err := ssh.NewSignerFromKey(s.privateKey)
 	if err != nil {
@@ -797,27 +807,27 @@ var sshRetryPolicy = retry.Backoff(time.Second, 10*time.Second, 1.5)
 // at the provided address. The machine should have been booted by
 // the same System instance. Each line of output is prefixed with the
 // address.
-func (s *System) tail(addr string) {
+func (s *System) tail(ctx context.Context, addr string, w io.Writer) error {
 	for retries := 0; ; retries++ {
-		err := s.tailBootmachine(addr)
+		err := s.tailBootmachine(addr, w)
 		if err == nil {
 			retries = 0
 			continue
 		}
 		log.Error.Printf("tail %v: %v", addr, err)
 		if strings.HasPrefix(err.Error(), "ssh: unable to authenticate") {
-			return
+			return err
 		}
 		if _, ok := err.(*ssh.ExitError); ok {
-			return
+			return err
 		}
-		if err := retry.Wait(context.Background(), sshRetryPolicy, retries); err != nil {
-			log.Error.Printf("tail %v: %v", addr, err)
+		if err := retry.Wait(ctx, sshRetryPolicy, retries); err != nil {
+			return err
 		}
 	}
 }
 
-func (s *System) tailBootmachine(addr string) error {
+func (s *System) tailBootmachine(addr string, w io.Writer) error {
 	conn, err := s.dialSSH(addr)
 	if err != nil {
 		return err
@@ -829,8 +839,8 @@ func (s *System) tailBootmachine(addr string) error {
 	}
 	defer sess.Close()
 	prefix := addr + ": "
-	sess.Stdout = bigioutil.PrefixWriter(os.Stdout, prefix)
-	sess.Stderr = bigioutil.PrefixWriter(os.Stderr, prefix)
+	sess.Stdout = bigioutil.PrefixWriter(w, prefix)
+	sess.Stderr = bigioutil.PrefixWriter(w, prefix)
 	return sess.Run("sudo journalctl --output=cat  -f -u bootmachine")
 }
 

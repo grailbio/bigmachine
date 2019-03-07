@@ -10,16 +10,19 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/bigioutil"
 	"github.com/grailbio/bigmachine/internal/authority"
+	"github.com/grailbio/bigmachine/internal/tee"
 	"golang.org/x/net/http2"
 )
 
@@ -40,6 +43,9 @@ type localSystem struct {
 	Gobable           struct{} // to make the struct gob-encodable
 	authorityFilename string
 	authority         *authority.T
+
+	mu     sync.Mutex
+	muxers map[*Machine]*tee.Writer
 }
 
 func (s *localSystem) Init(_ *B) error {
@@ -53,6 +59,7 @@ func (s *localSystem) Init(_ *B) error {
 		return err
 	}
 	s.authority, err = authority.New(s.authorityFilename)
+	s.muxers = make(map[*Machine]*tee.Writer)
 	return err
 }
 
@@ -72,8 +79,12 @@ func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) 
 		cmd.Env = os.Environ()
 		cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
 		cmd.Env = append(cmd.Env, "BIGMACHINE_SYSTEM=local")
-		cmd.Stdout = bigioutil.PrefixWriter(os.Stdout, prefix)
-		cmd.Stderr = bigioutil.PrefixWriter(os.Stderr, prefix)
+		muxer := new(tee.Writer)
+		s.mu.Lock()
+		s.muxers[machines[i]] = muxer
+		s.mu.Unlock()
+		cmd.Stdout = bigioutil.PrefixWriter(muxer, prefix)
+		cmd.Stderr = bigioutil.PrefixWriter(muxer, prefix)
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=:%d", port))
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_AUTHORITY=%s", s.authorityFilename))
 
@@ -159,6 +170,19 @@ func (*localSystem) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration
 	timeout = 2 * time.Minute
 	rpcTimeout = 10 * time.Second
 	return
+}
+
+func (s *localSystem) Tail(ctx context.Context, w io.Writer, m *Machine) error {
+	s.mu.Lock()
+	muxer := s.muxers[m]
+	s.mu.Unlock()
+	if muxer == nil {
+		return errors.New("machine not under management")
+	}
+	cancel := muxer.Tee(w)
+	<-ctx.Done()
+	cancel()
+	return nil
 }
 
 func getFreeTCPPort() (int, error) {
