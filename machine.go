@@ -5,6 +5,7 @@
 package bigmachine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -486,12 +487,16 @@ func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply int
 		if d, ok := ctx.Deadline(); ok {
 			deadline = fmt.Sprintf(" [deadline:%s]", time.Until(d))
 		}
-		log.Debug.Printf("%s %s(%v)%s", m.Addr, serviceMethod, arg, deadline)
+		var call string
+		if log.At(log.Debug) {
+			call = fmt.Sprintf("%s %s(%v)", m.Addr, serviceMethod, truncatef(arg))
+		}
+		log.Debug.Print(call, deadline)
 		defer func() {
 			if err != nil {
-				log.Debug.Printf("%s %s(%v) error: %v", m.Addr, serviceMethod, arg, err)
+				log.Debug.Print(call, " error: ", err)
 			} else {
-				log.Debug.Printf("%s %s(%v) ok %v", m.Addr, serviceMethod, arg, reply)
+				log.Debug.Print(call, " ok ", truncatef(reply))
 			}
 		}()
 	}
@@ -603,4 +608,14 @@ func (m *Machine) saveExpvars(ctx context.Context, path string) error {
 	}
 	defer f.Close()
 	return json.NewEncoder(f).Encode(vars)
+}
+
+func truncatef(v interface{}) string {
+	var b bytes.Buffer
+	fmt.Fprint(&b, v)
+	if b.Len() > 512 {
+		b.Truncate(512)
+		b.WriteString("(truncated)")
+	}
+	return b.String()
 }

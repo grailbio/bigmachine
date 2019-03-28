@@ -101,12 +101,13 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	}()
 	url := strings.TrimRight(addr, "/") + c.prefix + serviceMethod
 	if log.At(log.Debug) {
-		log.Debug.Printf("call %s %s %v", addr, serviceMethod, arg)
+		call := fmt.Sprint("call ", addr, " ", serviceMethod, " ", truncatef(arg))
+		log.Debug.Print(call)
 		defer func() {
 			if err != nil {
-				log.Debug.Printf("call error %s %s %v: %v", addr, serviceMethod, arg, err)
+				log.Debug.Print(call, " error: ", err)
 			} else {
-				log.Debug.Printf("call ok %s %s %v = %v", addr, serviceMethod, arg, reply)
+				log.Debug.Print(call, " ok: ", truncatef(reply))
 			}
 		}()
 	}
@@ -206,4 +207,14 @@ func (r streamReader) Read(p []byte) (n int, err error) {
 
 func (r streamReader) Close() error {
 	return r.Body.Close()
+}
+
+func truncatef(v interface{}) string {
+	var b bytes.Buffer
+	fmt.Fprint(&b, v)
+	if b.Len() > 512 {
+		b.Truncate(512)
+		b.WriteString("(truncated)")
+	}
+	return b.String()
 }
