@@ -21,9 +21,23 @@ import (
 
 const gobContentType = "application/x-gob"
 
+// clientState stores the state of a single client to a single server;
+// used to reset client connections when needed.
 type clientState struct {
-	uid    uint64 // uid distinguishes multiple http.Clients to the same server.
-	client *http.Client
+	addr    string
+	factory func() *http.Client
+
+	once   sync.Once
+	cached *http.Client
+}
+
+func (c *clientState) init() {
+	c.cached = c.factory()
+}
+
+func (c *clientState) Client() *http.Client {
+	c.once.Do(c.init)
+	return c.cached
 }
 
 // A Client invokes remote methods on RPC servers.
@@ -32,8 +46,7 @@ type Client struct {
 	prefix  string
 
 	mu      sync.Mutex
-	nextUID uint64
-	clients map[string]clientState
+	clients map[string]*clientState
 }
 
 // NewClient creates a new RPC client.  clientFactory is called to create a new
@@ -43,36 +56,30 @@ func NewClient(clientFactory func() *http.Client, prefix string) (*Client, error
 	return &Client{
 		factory: clientFactory,
 		prefix:  prefix,
-		clients: map[string]clientState{}}, nil
+		clients: make(map[string]*clientState),
+	}, nil
 }
 
-func (c *Client) getClient(addr string) clientState {
+func (c *Client) getClient(addr string) *clientState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	h, ok := c.clients[addr]
-	if !ok {
-		h = clientState{
-			uid:    c.nextUID,
-			client: c.factory(),
+	h := c.clients[addr]
+	if h == nil {
+		h = &clientState{
+			addr:    addr,
+			factory: c.factory,
 		}
 		c.clients[addr] = h
-		c.nextUID++
 	}
 	return h
 }
 
-func (c *Client) resetClient(addr string, prevUID uint64) {
+func (c *Client) resetClient(h *clientState) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	h := c.clients[addr]
-	if h.uid == prevUID {
-		log.Error.Printf("resetting http client for %s", addr)
-		h := clientState{
-			uid:    c.nextUID,
-			client: c.factory(),
-		}
-		c.clients[addr] = h
-		c.nextUID++
+	if c.clients[h.addr] == h {
+		log.Error.Printf("resetting http client for %s", h.addr)
+		delete(c.clients, h.addr)
 	}
 }
 
@@ -130,14 +137,14 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	}
 
 	h := c.getClient(addr)
-	resp, err := ctxhttp.Post(ctx, h.client, url, contentType, body)
+	resp, err := ctxhttp.Post(ctx, h.Client(), url, contentType, body)
 	switch err {
 	case nil:
 	case context.DeadlineExceeded, context.Canceled:
-		c.resetClient(addr, h.uid)
+		c.resetClient(h)
 		return err
 	default:
-		c.resetClient(addr, h.uid)
+		c.resetClient(h)
 		return errors.E(errors.Net, errors.Temporary, err)
 	}
 	if InjectFailures {
@@ -153,7 +160,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			if err := dec.Decode(e); err != nil {
 				return errors.E(errors.Invalid, errors.Temporary, "error while decoding error", err)
 			}
-			c.resetClient(addr, h.uid)
+			c.resetClient(h)
 			return e
 		case 200:
 			// Wrap the actual response in a stream reader so that
@@ -161,7 +168,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			*arg = streamReader{resp}
 		default:
 			resp.Body.Close()
-			c.resetClient(addr, h.uid)
+			c.resetClient(h)
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 		return nil
@@ -174,17 +181,17 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			if err := dec.Decode(e); err != nil {
 				return errors.E(errors.Invalid, errors.Temporary, "error while decoding error for "+serviceMethod, err)
 			}
-			c.resetClient(addr, h.uid)
+			c.resetClient(h)
 			return e
 		case 200:
 			err := dec.Decode(reply)
 			if err != nil {
-				c.resetClient(addr, h.uid)
+				c.resetClient(h)
 				err = errors.E(errors.Invalid, errors.Temporary, "error while decoding reply for "+serviceMethod, err)
 			}
 			return err
 		default:
-			c.resetClient(addr, h.uid)
+			c.resetClient(h)
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 	}

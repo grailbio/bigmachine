@@ -183,6 +183,9 @@ type System struct {
 
 	authority         *authority.T
 	authorityContents []byte
+
+	clientOnce   once.Task
+	clientConfig *tls.Config
 }
 
 // Name returns the name of this system ("ec2").
@@ -718,14 +721,17 @@ const httpTimeout = 30 * time.Second
 // instances launched by ec2machine over http/2.
 func (s *System) HTTPClient() *http.Client {
 	// TODO(marius): propagate error to caller
-	config, _, err := s.authority.HTTPSConfig()
+	err := s.clientOnce.Do(func() (err error) {
+		s.clientConfig, _, err = s.authority.HTTPSConfig()
+		return
+	})
 	if err != nil {
 		// TODO: propagate error, or return error client
 		log.Fatal(err)
 	}
 	transport := &http.Transport{
 		Dial:                (&net.Dialer{Timeout: httpTimeout}).Dial,
-		TLSClientConfig:     config,
+		TLSClientConfig:     s.clientConfig,
 		TLSHandshakeTimeout: httpTimeout,
 	}
 	http2.ConfigureTransport(transport)
