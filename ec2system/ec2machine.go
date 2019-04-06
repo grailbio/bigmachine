@@ -240,7 +240,7 @@ func (s *System) Init(b *bigmachine.B) error {
 		return fmt.Errorf("instance type %q not available in region %s", s.InstanceType, s.Region)
 	}
 
-	// Generate a unique SSH key for this session. This is used for programatic
+	// Generate a unique SSH key for this session. This is used for programmatic
 	// SSH access to created machines.
 	//
 	// TODO(marius): can we add the private key to the user's ssh-agent?
@@ -467,6 +467,8 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				{Key: aws.String("GOARCH"), Value: aws.String(info.Goarch)},
 				{Key: aws.String("GOOS"), Value: aws.String(info.Goos)},
 				{Key: aws.String("Digest"), Value: aws.String(info.Digest.String())},
+				{Key: aws.String("bigmachine"), Value: aws.String("true")},
+				{Key: aws.String("bigmachine:binary"), Value: aws.String(binary)},
 			},
 		})
 		if err != nil {
