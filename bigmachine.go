@@ -73,6 +73,9 @@ func Start(system System) *B {
 // System returns this B's System implementation.
 func (b *B) System() System { return b.system }
 
+// IsDriver is true if this is a driver instance (rather than a spawned machine).
+func (b *B) IsDriver() bool { return b.driver }
+
 // Run is the entry point for bigmachine. When run is called by the
 // driver process, it returns immediately; it never returns when
 // called by machines.

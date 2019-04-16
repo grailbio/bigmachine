@@ -259,7 +259,7 @@ func (s *System) Init(b *bigmachine.B) error {
 	sshKey, err := ioutil.ReadFile(sshkeyPath)
 	if err == nil {
 		s.SshKeys = append(s.SshKeys, string(sshKey))
-	} else {
+	} else if b.IsDriver() {
 		log.Printf("failed to read ssh key from %s: %v; the user will not be able to ssh into the system", sshkeyPath, err)
 	}
 	sess, err := session.NewSession(&aws.Config{Region: aws.String(s.Region)})
