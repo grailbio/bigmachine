@@ -163,7 +163,6 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			if err := dec.Decode(e); err != nil {
 				return errors.E(errors.Invalid, errors.Temporary, "error while decoding error", err)
 			}
-			c.resetClient(h)
 			return e
 		case 200:
 			// Wrap the actual response in a stream reader so that
@@ -184,7 +183,6 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			if err := dec.Decode(e); err != nil {
 				return errors.E(errors.Invalid, errors.Temporary, "error while decoding error for "+serviceMethod, err)
 			}
-			c.resetClient(h)
 			return e
 		case 200:
 			err := dec.Decode(reply)
