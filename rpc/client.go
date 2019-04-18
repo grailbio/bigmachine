@@ -79,6 +79,9 @@ func (c *Client) resetClient(h *clientState) {
 	defer c.mu.Unlock()
 	if c.clients[h.addr] == h {
 		log.Error.Printf("resetting http client for %s", h.addr)
+		if h.cached != nil {
+			h.cached.CloseIdleConnections()
+		}
 		delete(c.clients, h.addr)
 	}
 }
