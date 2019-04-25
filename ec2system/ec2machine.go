@@ -62,6 +62,7 @@ import (
 	"github.com/grailbio/bigmachine/internal/authority"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/http2"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -81,8 +82,13 @@ const (
 
 func init() { gob.Register(new(System)) }
 
-// RetryPolicy is used for EC2 calls.
-var retryPolicy = retry.Backoff(time.Second, 10*time.Second, 2)
+var (
+	// RetryPolicy is used to retry failed EC2 API calls.
+	retryPolicy = retry.Backoff(time.Second, 10*time.Second, 2)
+
+	// Used to rate limit EC2 calls.
+	limiter = rate.NewLimiter(rate.Limit(1), 2)
+)
 
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
 
@@ -430,6 +436,14 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	// instance count into this API.
 	var instanceIds []string
 	for retries := 0; err == nil; retries++ {
+		// We apply a rate limit here to avoid thundering herds of multiple
+		// machine requests, perfectly synchronized. This could have been
+		// solved by adding jitter to the retry policy as well, but a rate limiter
+		// is somewhat easier to reason about, and corresponds with the
+		// policies used to limit requests to the EC2 API.
+		if err := limiter.Wait(ctx); err != nil {
+			break
+		}
 		instanceIds, err = run()
 		if err == nil {
 			break
