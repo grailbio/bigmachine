@@ -37,6 +37,7 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sec = 30
 	}
 	debug, _ := strconv.Atoi(r.FormValue("debug"))
+	gc, _ := strconv.Atoi(r.FormValue("gc"))
 	// If a machine is specified, we pass through the profile directly.
 	if addr := r.FormValue("machine"); addr != "" {
 		ctx := r.Context()
@@ -45,7 +46,7 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			profileErrorf(w, http.StatusInternalServerError, "failed to dial machine: %v", err)
 			return
 		}
-		rc, err := getProfile(ctx, m, p.which, sec, debug)
+		rc, err := getProfile(ctx, m, p.which, sec, debug, gc > 0)
 		if err != nil {
 			profileErrorf(w, http.StatusInternalServerError, "failed to collect %s profile: %v", p.which, err)
 			return
@@ -75,7 +76,7 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		m := m
 		g.Go(func() error {
-			rc, err := getProfile(ctx, m, p.which, sec, debug)
+			rc, err := getProfile(ctx, m, p.which, sec, debug, gc > 0)
 			if err != nil {
 				log.Error.Printf("failed to collect profile %s from %s: %v", p.which, m.Addr, err)
 				return nil
@@ -136,11 +137,11 @@ func (p *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getProfile(ctx context.Context, m *Machine, which string, sec, debug int) (rc io.ReadCloser, err error) {
+func getProfile(ctx context.Context, m *Machine, which string, sec, debug int, gc bool) (rc io.ReadCloser, err error) {
 	if which == "profile" {
 		err = m.Call(ctx, "Supervisor.CPUProfile", time.Duration(sec)*time.Second, &rc)
 	} else {
-		err = m.Call(ctx, "Supervisor.Profile", profileRequest{which, debug}, &rc)
+		err = m.Call(ctx, "Supervisor.Profile", profileRequest{which, debug, gc}, &rc)
 	}
 	return
 }

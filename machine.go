@@ -581,7 +581,7 @@ func (m *Machine) saveProfile(ctx context.Context, which, path string) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	var rc io.ReadCloser
-	err := m.Call(ctx, "Supervisor.Profile", profileRequest{which, 0}, &rc)
+	err := m.Call(ctx, "Supervisor.Profile", profileRequest{which, 0, false}, &rc)
 	if err != nil {
 		return err
 	}

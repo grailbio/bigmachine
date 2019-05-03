@@ -231,11 +231,15 @@ func (s *Supervisor) CPUProfile(ctx context.Context, dur time.Duration, prof *io
 type profileRequest struct {
 	Name  string
 	Debug int
+	GC    bool
 }
 
 // Profile returns the named pprof profile for the current process.
 // The profile is returned in protocol buffer format.
 func (s *Supervisor) Profile(ctx context.Context, req profileRequest, prof *io.ReadCloser) error {
+	if req.Name == "heap" && req.GC {
+		runtime.GC()
+	}
 	p := pprof.Lookup(req.Name)
 	if p == nil {
 		return fmt.Errorf("no such profile %s", req.Name)
