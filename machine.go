@@ -348,11 +348,14 @@ func (m *Machine) loop(ctx context.Context, system System) {
 		// (up or down) by maintaining a periodic ping.
 		m.setState(Running)
 		for {
-			if err := m.ping(ctx); err != nil {
-				m.errorf("ping failed: %v", err)
+			start := time.Now()
+			err := m.retryCall(ctx, m.keepaliveTimeout, m.keepaliveRpcTimeout, "Supervisor.Ping", 0, nil)
+			if err != nil {
+				m.errorf("ping failed after %s (timeout=%s, rpc timeout=%s): %v",
+					time.Since(start), m.keepaliveTimeout, m.keepaliveRpcTimeout, err)
 				return
 			}
-			time.Sleep(5 * time.Second)
+			time.Sleep(m.keepalivePeriod / 2)
 		}
 	}
 

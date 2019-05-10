@@ -74,11 +74,11 @@ func (c *Client) getClient(addr string) *clientState {
 	return h
 }
 
-func (c *Client) resetClient(h *clientState) {
+func (c *Client) resetClient(h *clientState, serviceMethod string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.clients[h.addr] == h {
-		log.Error.Printf("resetting http client for %s", h.addr)
+		log.Error.Printf("resetting http client for %s while making call to %s", h.addr, serviceMethod)
 		if h.cached != nil {
 			h.cached.CloseIdleConnections()
 		}
@@ -144,10 +144,10 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	switch err {
 	case nil:
 	case context.DeadlineExceeded, context.Canceled:
-		c.resetClient(h)
+		c.resetClient(h, serviceMethod)
 		return err
 	default:
-		c.resetClient(h)
+		c.resetClient(h, serviceMethod)
 		return errors.E(errors.Net, errors.Temporary, err)
 	}
 	if InjectFailures {
@@ -170,7 +170,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			*arg = streamReader{resp}
 		default:
 			resp.Body.Close()
-			c.resetClient(h)
+			c.resetClient(h, serviceMethod)
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 		return nil
@@ -187,12 +187,12 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		case 200:
 			err := dec.Decode(reply)
 			if err != nil {
-				c.resetClient(h)
+				c.resetClient(h, serviceMethod)
 				err = errors.E(errors.Invalid, errors.Temporary, "error while decoding reply for "+serviceMethod, err)
 			}
 			return err
 		default:
-			c.resetClient(h)
+			c.resetClient(h, serviceMethod)
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 	}

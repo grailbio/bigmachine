@@ -126,16 +126,22 @@ func (b *B) run() {
 // does.
 func (b *B) Dial(ctx context.Context, addr string) (*Machine, error) {
 	// TODO(marius): normalize addrs?
-	// TODO(marius): collect machines from 'machines' as they become
-	// unavailable and should be redialed. We should also embed some sort
-	// of cookie/capability into the address so we can distinguish between
-	// different instances of a machine on the same address.
+	// TODO(marius): We should also embed some sort of cookie/capability
+	// into the address so we can distinguish between different
+	// instances of a machine on the same address.
 	b.mu.Lock()
 	m := b.machines[addr]
 	if m == nil {
 		m = &Machine{Addr: addr, owner: false}
 		b.machines[addr] = m
 		m.start(b)
+		go func() {
+			<-m.Wait(Stopped)
+			log.Error.Printf("%s: machine stopped with error %s", m.Addr, m.Err())
+			b.mu.Lock()
+			delete(b.machines, addr)
+			b.mu.Unlock()
+		}()
 	}
 	b.mu.Unlock()
 	return m, nil
