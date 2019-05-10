@@ -49,8 +49,8 @@ func TestTestSystem(t *testing.T) {
 	if got, want := test.N(), 1; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
-	if !test.KillRandom() {
-		t.Fatal("failed to kill")
+	if !test.Kill(nil) {
+		t.Fatal("failed to kill random machine")
 	}
 	if got, want := test.N(), 0; got != want {
 		t.Errorf("got %v, want %v", got, want)

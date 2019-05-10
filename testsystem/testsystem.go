@@ -95,25 +95,17 @@ func (s *System) N() int {
 	return len(s.machines)
 }
 
-// KillRandom kills a random machine, returning true if it was successful.
-func (s *System) KillRandom() bool {
+// Kill kills the machine m that is under management of this system,
+// returning true if successful. If m is nil, a random machine is chosen.
+func (s *System) Kill(m *bigmachine.Machine) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.machines) == 0 {
 		return false
 	}
-	i := rand.Intn(len(s.machines))
-	m := s.machines[i]
-	s.machines = append(s.machines[:i], s.machines[i+1:]...)
-	m.Kill()
-	return true
-}
-
-// Kill kills the machine m that is under management of this system,
-// returning true if successful.
-func (s *System) Kill(m *bigmachine.Machine) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if m == nil {
+		m = s.machines[rand.Intn(len(s.machines))].Machine
+	}
 	for i, sm := range s.machines {
 		if sm.Machine == m {
 			s.machines = append(s.machines[:i], s.machines[i+1:]...)
