@@ -55,6 +55,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/grailbio/base/backgroundcontext"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 )
@@ -185,7 +186,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	ctx := r.Context()
+	ctx := backgroundcontext.Wrap(r.Context())
 	parts := strings.SplitN(path.Base(r.URL.Path), ".", 2)
 	if len(parts) != 2 {
 		http.Error(w, "bad url", 400)
