@@ -24,10 +24,10 @@ func TestDiskConfig(t *testing.T) {
 		nslice    int
 		sliceSize int64
 	}{
-		{1000, 5, 214},
-		{5350, 25, 214},
-		{5350 + 25, 25, 215},
-		{6000, 25, 240},
+		{1000, 3, 335},
+		{5350, 16, 335},
+		{5350 + 25, 17, 335},
+		{6000, 18, 335},
 	} {
 		sys := System{Dataspace: test.dataspace}
 		nslice, sliceSize := sys.sliceConfig()

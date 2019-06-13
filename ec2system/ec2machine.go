@@ -70,9 +70,9 @@ const (
 	maxConcurrentStreams = 20000
 	authorityPath        = "/tmp/bigmachine.pem"
 
-	// 214GiB is the smallest gp2 disk size that attains maximum
-	// possible gp2 throughput.
-	minDataVolumeSliceSize = 214
+	// 334GiB is the smallest gp2 disk size that yields maximum throughput, as per
+	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSVolumeTypes.html
+	minDataVolumeSliceSize = 335
 
 	// The maximum number of EBS volumes an instance can have.
 	// This is really ~40, but we're going to keep it to a-z to maintain
