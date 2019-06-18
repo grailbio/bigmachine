@@ -13,14 +13,28 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"golang.org/x/net/context/ctxhttp"
+	"golang.org/x/time/rate"
 )
 
-const gobContentType = "application/x-gob"
+const (
+	gobContentType = "application/x-gob"
+
+	// We warn on RPC payloads above this size.
+	largeRpcPayload = 1 << 30
+)
+
+// Loggers used to inform the user of large payloads, but without
+// spamming them.
+var (
+	largeArgLogger   = &rateLimitingOutputter{rate.NewLimiter(rate.Every(time.Minute), 2), log.GetOutputter()}
+	largeReplyLogger = &rateLimitingOutputter{rate.NewLimiter(rate.Every(time.Minute), 2), log.GetOutputter()}
+)
 
 // clientState stores the state of a single client to a single server;
 // used to reset client connections when needed.
@@ -45,6 +59,10 @@ func (c *clientState) Client() *http.Client {
 type Client struct {
 	factory func() *http.Client
 	prefix  string
+
+	// Loggers contains a rate limiting logger per client;
+	// use getLogger to retrieve it.
+	loggers sync.Map // map[string]*rateLimitingOutputter
 
 	mu      sync.Mutex
 	clients map[string]*clientState
@@ -79,12 +97,21 @@ func (c *Client) resetClient(h *clientState, serviceMethod string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.clients[h.addr] == h {
-		log.Error.Printf("resetting http client for %s while making call to %s", h.addr, serviceMethod)
+		log.Outputf(c.getLogger(h.addr), log.Error, "resetting http client %s while calling to %s", h.addr, serviceMethod)
 		if h.cached != nil {
 			h.cached.CloseIdleConnections()
 		}
 		delete(c.clients, h.addr)
 	}
+}
+
+func (c *Client) getLogger(addr string) *rateLimitingOutputter {
+	v, ok := c.loggers.Load(addr)
+	if ok {
+		return v.(*rateLimitingOutputter)
+	}
+	v, _ = c.loggers.LoadOrStore(addr, &rateLimitingOutputter{rate.NewLimiter(rate.Every(time.Minute), 1), log.GetOutputter()})
+	return v.(*rateLimitingOutputter)
 }
 
 // Call invokes a method on the server named by the provided address.
@@ -136,6 +163,9 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		if err := enc.Encode(arg); err != nil {
 			return errors.E(errors.Invalid, err)
 		}
+		if n := b.Len(); n > largeRpcPayload {
+			log.Outputf(largeArgLogger, log.Info, "call %s %s: large argument: %d bytes", addr, serviceMethod, n)
+		}
 		body = b
 		contentType = gobContentType
 	}
@@ -177,7 +207,8 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		return nil
 	default:
 		defer resp.Body.Close()
-		dec := gob.NewDecoder(resp.Body)
+		sizeReader := &sizeTrackingReader{Reader: resp.Body}
+		dec := gob.NewDecoder(sizeReader)
 		switch resp.StatusCode {
 		case methodErrorCode:
 			e := new(errors.Error)
@@ -190,6 +221,9 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			if err != nil {
 				c.resetClient(h, serviceMethod)
 				err = errors.E(errors.Invalid, errors.Temporary, "error while decoding reply for "+serviceMethod, err)
+			}
+			if n := sizeReader.Len(); n > largeRpcPayload {
+				log.Outputf(largeReplyLogger, log.Info, "call %s %s: large reply: %d bytes", addr, serviceMethod, n)
 			}
 			return err
 		default:
