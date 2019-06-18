@@ -5,7 +5,6 @@
 package bigmachine
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
 	"github.com/grailbio/bigmachine/rpc"
@@ -498,8 +498,6 @@ func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply int
 		defer func() {
 			if err != nil {
 				log.Debug.Print(call, " error: ", err)
-			} else {
-				log.Debug.Print(call, " ok ", truncatef(reply))
 			}
 		}()
 	}
@@ -614,11 +612,7 @@ func (m *Machine) saveExpvars(ctx context.Context, path string) error {
 }
 
 func truncatef(v interface{}) string {
-	var b bytes.Buffer
-	fmt.Fprint(&b, v)
-	if b.Len() > 512 {
-		b.Truncate(512)
-		b.WriteString("(truncated)")
-	}
+	b := limitbuf.NewLogger(512)
+	fmt.Fprint(b, v)
 	return b.String()
 }

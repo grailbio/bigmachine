@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"golang.org/x/net/context/ctxhttp"
 )
@@ -218,11 +219,7 @@ func (r streamReader) Close() error {
 }
 
 func truncatef(v interface{}) string {
-	var b bytes.Buffer
-	fmt.Fprint(&b, v)
-	if b.Len() > 512 {
-		b.Truncate(512)
-		b.WriteString("(truncated)")
-	}
+	b := limitbuf.NewLogger(512)
+	fmt.Fprint(b, v)
 	return b.String()
 }
