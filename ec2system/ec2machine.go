@@ -181,6 +181,11 @@ type System struct {
 	// The user running the application. For tagging.
 	Username string
 
+	// AdditionalFiles are added to the worker cloud-init configuration.
+	AdditionalFiles []CloudFile
+	// AdditionalUnits are added to the worker cloud-init configuration.
+	AdditionalUnits []CloudUnit
+
 	privateKey *rsa.PrivateKey
 
 	config instances.Type
@@ -549,8 +554,8 @@ func (s *System) cloudConfig() *cloudConfig {
 		// we're not interested in these updates. (The AMI should be kept up to
 		// date however.)
 		c.CoreOS.Update.RebootStrategy = "off"
-		c.AppendUnit(cloudUnit{Name: "update-engine.service", Command: "stop"})
-		c.AppendUnit(cloudUnit{Name: "locksmithd.service", Command: "stop"})
+		c.AppendUnit(CloudUnit{Name: "update-engine.service", Command: "stop"})
+		c.AppendUnit(CloudUnit{Name: "locksmithd.service", Command: "stop"})
 	}
 
 	var (
@@ -568,7 +573,7 @@ func (s *System) cloudConfig() *cloudConfig {
 		if s.config.NVMe {
 			dataDeviceName = "nvme1n1"
 		}
-		c.AppendUnit(cloudUnit{
+		c.AppendUnit(CloudUnit{
 			Name:    fmt.Sprintf("format-%s.service", dataDeviceName),
 			Command: "start",
 			Content: tmpl(`
@@ -594,7 +599,7 @@ func (s *System) cloudConfig() *cloudConfig {
 				devices[idx] = fmt.Sprintf("xvd%c", 'b'+idx)
 			}
 		}
-		c.AppendUnit(cloudUnit{
+		c.AppendUnit(CloudUnit{
 			Name:    fmt.Sprintf("format-%s.service", dataDeviceName),
 			Command: "start",
 			Content: tmpl(`
@@ -611,7 +616,7 @@ func (s *System) cloudConfig() *cloudConfig {
 		})
 	}
 	if dataDeviceName != "" {
-		c.AppendUnit(cloudUnit{
+		c.AppendUnit(CloudUnit{
 			Name:    "mnt-data.mount",
 			Command: "start",
 			Content: tmpl(`
@@ -652,7 +657,7 @@ func (s *System) cloudConfig() *cloudConfig {
 	// filedescriptors.
 	const nropen = 32 << 20    // per-process limit
 	const filemax = nropen * 4 // system-wide limit
-	c.AppendFile(cloudFile{
+	c.AppendFile(CloudFile{
 		Permissions: "0644",
 		Path:        "/etc/sysctl.d/90-bigmachine",
 		Owner:       "root",
@@ -662,15 +667,23 @@ func (s *System) cloudConfig() *cloudConfig {
 
 		`, args{"filemax": filemax, "nropen": nropen}),
 	})
+
+	for _, f := range s.AdditionalFiles {
+		c.AppendFile(f)
+	}
+	for _, u := range s.AdditionalUnits {
+		c.AppendUnit(u)
+	}
+
 	// Write the bootstrapping script. It fetches the binary and runs it.
-	c.AppendFile(cloudFile{
+	c.AppendFile(CloudFile{
 		Permissions: "0755",
 		Path:        "/opt/bin/bootmachine",
 		Owner:       "root",
 		Content: tmpl(`
 		#!/bin/bash
 		set -ex
-		bin=/opt/bin/ec2boot
+		bin=/tmp/ec2boot
 		curl {{.binary}} >$bin
 		chmod +x $bin
 		export BIGMACHINE_MODE=machine
@@ -679,7 +692,7 @@ func (s *System) cloudConfig() *cloudConfig {
 		exec $bin
 		`, args{"binary": s.Binary, "port": port}),
 	})
-	c.AppendFile(cloudFile{
+	c.AppendFile(CloudFile{
 		Permissions: "0644",
 		Path:        authorityPath,
 		Content:     string(s.authorityContents),
@@ -689,7 +702,7 @@ func (s *System) cloudConfig() *cloudConfig {
 	if s.Flavor == CoreOS {
 		sysctlPath = "/usr/lib/systemd/systemd-sysctl"
 	}
-	c.AppendUnit(cloudUnit{
+	c.AppendUnit(CloudUnit{
 		Name:    "update-sysctl.service",
 		Enable:  true,
 		Command: "start",
@@ -704,7 +717,7 @@ func (s *System) cloudConfig() *cloudConfig {
 	// Note: LimitNOFILE must be set explicitly, instead of just "infinity", since
 	// the "inifinity" will expand the process'es current hard limit, which is
 	// typically 1M.
-	c.AppendUnit(cloudUnit{
+	c.AppendUnit(CloudUnit{
 		Name:    "bootmachine.service",
 		Enable:  true,
 		Command: "start",

@@ -11,14 +11,18 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-type cloudFile struct {
+// CloudFile is a component of the cloudConfig configuration as accepted by
+// cloud-init. It represents a file that will be written to the filesystem.
+type CloudFile struct {
 	Path        string `yaml:"path,omitempty"`
 	Permissions string `yaml:"permissions,omitempty"`
 	Owner       string `yaml:"owner,omitempty"`
 	Content     string `yaml:"content,omitempty"`
 }
 
-type cloudUnit struct {
+// CloudUnit is a component of the cloudConfig configuration as accepted by
+// cloud-init. It represents a systemd unit.
+type CloudUnit struct {
 	Name    string `yaml:"name,omitempty"`
 	Command string `yaml:"command,omitempty"`
 	Enable  bool   `yaml:"enable,omitempty"`
@@ -28,7 +32,7 @@ type cloudUnit struct {
 	Sync bool `yaml:"-"`
 }
 
-// cloudConfig represents a cloud cloud configuration as accepted by
+// cloudConfig represents a cloud configuration as accepted by
 // cloud-init. CloudConfigs can be incrementally defined and then
 // rendered by its Marshal method.
 type cloudConfig struct {
@@ -36,12 +40,12 @@ type cloudConfig struct {
 	// how Systemd units are processed before serialization.
 	Flavor Flavor `yaml:"-"`
 
-	WriteFiles []cloudFile `yaml:"write_files,omitempty"`
+	WriteFiles []CloudFile `yaml:"write_files,omitempty"`
 	CoreOS     struct {
 		Update struct {
 			RebootStrategy string `yaml:"reboot-strategy,omitempty"`
 		} `yaml:"update,omitempty"`
-		Units []cloudUnit `yaml:"units,omitempty"`
+		Units []CloudUnit `yaml:"units,omitempty"`
 	} `yaml:"coreos,omitempty"`
 	SshAuthorizedKeys []string `yaml:"ssh_authorized_keys,omitempty"`
 
@@ -50,7 +54,7 @@ type cloudConfig struct {
 	// Mounts stores a list of cloud-init mounts.
 	Mounts [][]string `yaml:"mounts,omitempty"`
 
-	units []cloudUnit
+	units []CloudUnit
 }
 
 // Merge merges cloudConfig d into c. List entries from c are
@@ -71,12 +75,12 @@ func (c *cloudConfig) Merge(d *cloudConfig) {
 }
 
 // AppendFile appends the file f to the cloudConfig c.
-func (c *cloudConfig) AppendFile(f cloudFile) {
+func (c *cloudConfig) AppendFile(f CloudFile) {
 	c.WriteFiles = append(c.WriteFiles, f)
 }
 
 // AppendUnit appends the systemd unit u to the cloudConfig c.
-func (c *cloudConfig) AppendUnit(u cloudUnit) {
+func (c *cloudConfig) AppendUnit(u CloudUnit) {
 	c.units = append(c.units, u)
 }
 
@@ -106,7 +110,7 @@ func (c *cloudConfig) Marshal() ([]byte, error) {
 		}
 		for _, u := range c.units {
 			if u.Content != "" {
-				copy.AppendFile(cloudFile{
+				copy.AppendFile(CloudFile{
 					Path:        path.Join("/etc/systemd/system", u.Name),
 					Permissions: "0644",
 					Content:     u.Content,
