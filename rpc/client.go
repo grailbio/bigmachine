@@ -26,7 +26,7 @@ const (
 	gobContentType = "application/x-gob"
 
 	// We warn on RPC payloads above this size.
-	largeRpcPayload = 1 << 30
+	largeRpcPayload = 64 << 20
 )
 
 // Loggers used to inform the user of large payloads, but without
