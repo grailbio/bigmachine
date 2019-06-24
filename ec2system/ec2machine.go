@@ -53,11 +53,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
 	"github.com/grailbio/base/sync/once"
 	"github.com/grailbio/bigmachine"
-	"github.com/grailbio/bigmachine/bigioutil"
 	"github.com/grailbio/bigmachine/ec2system/instances"
 	"github.com/grailbio/bigmachine/internal/authority"
 	"golang.org/x/crypto/ssh"
@@ -874,8 +874,8 @@ func (s *System) tailBootmachine(addr string, w io.Writer) error {
 	}
 	defer sess.Close()
 	prefix := addr + ": "
-	sess.Stdout = bigioutil.PrefixWriter(w, prefix)
-	sess.Stderr = bigioutil.PrefixWriter(w, prefix)
+	sess.Stdout = iofmt.PrefixWriter(w, prefix)
+	sess.Stderr = iofmt.PrefixWriter(w, prefix)
 	return sess.Run("sudo journalctl --output=cat  -f -u bootmachine")
 }
 

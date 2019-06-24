@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/log"
-	"github.com/grailbio/bigmachine/bigioutil"
 	"github.com/grailbio/bigmachine/internal/authority"
 	"github.com/grailbio/bigmachine/internal/tee"
 	"golang.org/x/net/http2"
@@ -83,8 +83,8 @@ func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) 
 		s.mu.Lock()
 		s.muxers[machines[i]] = muxer
 		s.mu.Unlock()
-		cmd.Stdout = bigioutil.PrefixWriter(muxer, prefix)
-		cmd.Stderr = bigioutil.PrefixWriter(muxer, prefix)
+		cmd.Stdout = iofmt.PrefixWriter(muxer, prefix)
+		cmd.Stderr = iofmt.PrefixWriter(muxer, prefix)
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=:%d", port))
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_AUTHORITY=%s", s.authorityFilename))
 
