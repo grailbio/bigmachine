@@ -56,18 +56,31 @@ type rpcstats struct {
 	treestats
 }
 
-// Start starts an RPC stat with the provided address and method. The
-// stat is timed and is recorded when the returned completion
-// function is called.
-func (r *rpcstats) Start(addr, method string) (done func()) {
+// Start starts an RPC stat with the provided address and method. It returns a
+// function that records the status and latency of the RPC. The caller must run
+// the function after the RPC finishes.  Args {request,reply}Bytes report the
+// sizes of the RPC payloads. They may be -1 if the size is unknown (e.g., when
+// the RPC is streaming). Arg err is the result of the RPC.
+func (r *rpcstats) Start(addr, method string) (done func(requestBytes, replyBytes int64, err error)) {
 	r.Path("method", method).Add("count", 1)
 	if addr != "" {
 		r.Path("machine", addr, "method", method).Add("count", 1)
 	}
 	now := time.Now()
-	return func() {
+	return func(requestBytes, replyBytes int64, err error) {
 		elapsed := int64(time.Since(now).Nanoseconds()) / 1e6
 		r.Path("method", method).Add("time", elapsed)
+		if requestBytes > 0 {
+			r.Path("method", method).Add("requestbytes", requestBytes)
+			r.max(requestBytes, "method", method, "maxrequestbytes")
+		}
+		if replyBytes > 0 {
+			r.Path("method", method).Add("replybytes", replyBytes)
+			r.max(replyBytes, "method", method, "maxreplybytes")
+		}
+		if err != nil {
+			r.Path("method", method).Add("errors", 1)
+		}
 		r.max(elapsed, "method", method, "maxtime")
 
 		if addr != "" {

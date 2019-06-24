@@ -131,11 +131,12 @@ func (c *Client) getLogger(addr string) *rateLimitingOutputter {
 // io.ReadCloser errors on read.
 func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, reply interface{}) (err error) {
 	done := clientstats.Start(addr, serviceMethod)
+	var (
+		requestBytes = -1
+		replyBytes   = -1
+	)
 	defer func() {
-		if err == nil {
-			// Only register successful replies (currently).
-			done()
-		}
+		done(int64(requestBytes), int64(replyBytes), err)
 	}()
 	url := strings.TrimRight(addr, "/") + c.prefix + serviceMethod
 	if log.At(log.Debug) {
@@ -163,8 +164,9 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		if err := enc.Encode(arg); err != nil {
 			return errors.E(errors.Invalid, err)
 		}
-		if n := b.Len(); n > largeRpcPayload {
-			log.Outputf(largeArgLogger, log.Info, "call %s %s: large argument: %d bytes", addr, serviceMethod, n)
+		requestBytes = b.Len()
+		if requestBytes > largeRpcPayload {
+			log.Outputf(largeArgLogger, log.Info, "call %s %s: large argument: %d bytes", addr, serviceMethod, requestBytes)
 		}
 		body = b
 		contentType = gobContentType
@@ -222,8 +224,9 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 				c.resetClient(h, serviceMethod)
 				err = errors.E(errors.Invalid, errors.Temporary, "error while decoding reply for "+serviceMethod, err)
 			}
-			if n := sizeReader.Len(); n > largeRpcPayload {
-				log.Outputf(largeReplyLogger, log.Info, "call %s %s: large reply: %d bytes", addr, serviceMethod, n)
+			replyBytes = sizeReader.Len()
+			if replyBytes > largeRpcPayload {
+				log.Outputf(largeReplyLogger, log.Info, "call %s %s: large reply: %d bytes", addr, serviceMethod, replyBytes)
 			}
 			return err
 		default:

@@ -44,6 +44,7 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/gob"
 	"fmt"
@@ -206,8 +207,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-	defer serverstats.Start("", service+"."+method)()
-
+	var (
+		err          error
+		requestBytes = -1
+		replyBytes   = -1
+	)
+	done := serverstats.Start("", service+"."+method)
+	defer func() {
+		done(int64(requestBytes), int64(replyBytes), err)
+	}()
 	// Read the request.
 	var argv reflect.Value
 	if m.arg == typeOfReader {
@@ -219,8 +227,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			argv = reflect.New(m.arg)
 		}
-		dec := gob.NewDecoder(r.Body)
-		if err := dec.Decode(argv.Interface()); err != nil {
+		sizeReader := &sizeTrackingReader{Reader: r.Body}
+		dec := gob.NewDecoder(sizeReader)
+		requestBytes = sizeReader.Len()
+		if err = dec.Decode(argv.Interface()); err != nil {
 			http.Error(w, fmt.Sprintf("error decoding request: %v", err), 400)
 			return
 		}
@@ -243,7 +253,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			replyv.Elem().Set(reflect.MakeSlice(m.reply.Elem(), 0, 0))
 		}
 	}
-	err := func() (err error) {
+	err = func() (err error) {
 		defer func() {
 			if e := recover(); e != nil {
 				log.Error.Printf("panic in method call %s.%s\n%s", service, method, string(debug.Stack()))
@@ -278,7 +288,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var errStr string
-		if _, err := io.Copy(wr, readcloser); err != nil {
+		if _, err = io.Copy(wr, readcloser); err != nil {
 			log.Error.Printf("rpc: error writing reply: %v", err)
 			errStr = err.Error()
 		}
@@ -294,9 +304,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// properly.
 		w.WriteHeader(code)
 	}
-	// TODO: should we buffer the write?
-	enc := gob.NewEncoder(w)
-	if err := enc.Encode(replyIface); err != nil {
+	b := new(bytes.Buffer)
+	enc := gob.NewEncoder(b)
+	err = enc.Encode(replyIface)
+	replyBytes = b.Len()
+	if err == nil {
+		_, err = w.Write(b.Bytes())
+	}
+	if err != nil {
 		log.Error.Printf("rpc: error writing reply: %v", err)
 		// May not work, but it's worth a try:
 		http.Error(w, fmt.Sprint(err), 500)
