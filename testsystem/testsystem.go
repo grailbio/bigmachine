@@ -169,6 +169,7 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 // is that the test machine supervisor does not exec the process, as
 // this would break testing.
 func (s *System) Start(_ context.Context, count int) ([]*bigmachine.Machine, error) {
+	s.mu.Lock()
 	machines := make([]*bigmachine.Machine, count)
 	for i := range machines {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -183,12 +184,11 @@ func (s *System) Start(_ context.Context, count int) ([]*bigmachine.Machine, err
 			Maxprocs: s.Machineprocs,
 			NoExec:   true,
 		}
-		s.mu.Lock()
 		s.machines = append(s.machines, &machine{m, cancel, httpServer})
-		s.cond.Broadcast()
-		s.mu.Unlock()
 		machines[i] = m
 	}
+	s.cond.Broadcast()
+	s.mu.Unlock()
 	return machines, nil
 }
 
