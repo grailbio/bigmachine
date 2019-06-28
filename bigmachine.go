@@ -167,6 +167,15 @@ func (s Services) applyParam(m *Machine) {
 	}
 }
 
+// Environ is a machine parameter that amends the process environment
+// of the machine. It is a slice of strings in the form "key=value"; later
+// definitions override earlies ones.
+type Environ []string
+
+func (e Environ) applyParam(m *Machine) {
+	m.environ = append(m.environ, e...)
+}
+
 // Start launches up to n new machines and returns them. The machines are
 // configured according to the provided parameters. Each machine must
 // have at least one service exported, or else Start returns an

@@ -132,6 +132,10 @@ type Machine struct {
 	// Services is the set of services to be instantiated on a new machine.
 	services map[string]interface{}
 
+	// Environ is the process environment to be propagated to the remote
+	// process.
+	environ []string
+
 	owner bool
 
 	client *rpc.Client
@@ -472,7 +476,10 @@ func (m *Machine) exec(ctx context.Context) error {
 		return fmt.Errorf("invalid binary: need %s %s, have %s %s",
 			info.Goarch, info.Goos, runtime.GOARCH, runtime.GOOS)
 	}
-	// First set the correct arguments.
+	// First set the correct environment and arguments.
+	if err := m.call(ctx, "Supervisor.Setenv", m.environ, nil); err != nil {
+		return err
+	}
 	if err := m.call(ctx, "Supervisor.Setargs", os.Args, nil); err != nil {
 		return err
 	}

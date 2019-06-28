@@ -3,5 +3,7 @@
 set -e
 set -x
 
-GOOS=linux GOARCH=amd64 go build -o /tmp/ec2boot0.1 .
-cloudkey eng/dev aws s3 cp --acl public-read /tmp/ec2boot0.1 s3://grail-bin/linux/amd64/ec2boot0.1
+VERSION=ec2boot0.2
+
+GOOS=linux GOARCH=amd64 go build -o /tmp/$VERSION .
+cloudkey ti-apps/admin aws s3 cp --acl public-read /tmp/$VERSION s3://grail-public-bin/linux/amd64/$VERSION

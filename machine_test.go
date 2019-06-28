@@ -23,9 +23,15 @@ var fakeDigest = digester.FromString("fake binary")
 
 type fakeSupervisor struct {
 	Args          []string
+	Environ       []string
 	Image         []byte
 	LastKeepalive time.Time
 	Hung          bool
+}
+
+func (s *fakeSupervisor) Setenv(ctx context.Context, env []string, _ *struct{}) error {
+	s.Environ = env
+	return nil
 }
 
 func (s *fakeSupervisor) Setargs(ctx context.Context, args []string, _ *struct{}) error {
@@ -71,7 +77,7 @@ func (s *fakeSupervisor) Hang(ctx context.Context, _ struct{}, _ *struct{}) erro
 	return ctx.Err()
 }
 
-func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, shutdown func()) {
+func newTestMachine(t *testing.T, params ...Param) (m *Machine, supervisor *fakeSupervisor, shutdown func()) {
 	t.Helper()
 	supervisor = new(fakeSupervisor)
 	srv := rpc.NewServer()
@@ -89,6 +95,9 @@ func newTestMachine(t *testing.T) (m *Machine, supervisor *fakeSupervisor, shutd
 		keepalivePeriod:     time.Minute,
 		keepaliveTimeout:    2 * time.Minute,
 		keepaliveRpcTimeout: 10 * time.Second,
+	}
+	for _, param := range params {
+		param.applyParam(m)
 	}
 	m.start(nil)
 	return m, supervisor, func() {
@@ -123,6 +132,18 @@ func TestMachineBootup(t *testing.T) {
 	}
 	if time.Since(supervisor.LastKeepalive) > time.Minute {
 		t.Errorf("failed to maintain keepalive")
+	}
+}
+
+func TestMachineEnv(t *testing.T) {
+	m, supervisor, shutdown := newTestMachine(t, Environ{"test=yes"})
+	defer shutdown()
+	<-m.Wait(Running)
+	if got, want := len(supervisor.Environ), 1; got != want {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if got, want := supervisor.Environ[0], "test=yes"; got != want {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 

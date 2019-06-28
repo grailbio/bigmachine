@@ -53,6 +53,7 @@ func binary() (io.ReadCloser, error) {
 type Supervisor struct {
 	b       *B
 	system  System
+	environ []string
 	server  *rpc.Server
 	nextc   chan time.Time
 	healthy uint32
@@ -127,11 +128,18 @@ func (s *Supervisor) Setargs(ctx context.Context, args []string, _ *struct{}) er
 	return nil
 }
 
+// Setenv sets the processes' environment. It is applied to newly exec'd
+// images, and should be called before Exec. The provided environment
+// is appended to the default process environment: keys provided here
+// override those that already exist in the environment.
+func (s *Supervisor) Setenv(ctx context.Context, env []string, _ *struct{}) error {
+	s.environ = env
+	return nil
+}
+
 // Exec reads a new image from its argument and replaces the current
 // process with it. As a consequence, the currently running machine will
 // die. It is up to the caller to manage this interaction.
-//
-// TODO(marius): replicate the relevant parts of the caller's environment.
 func (s *Supervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) error {
 	f, err := ioutil.TempFile("", "")
 	if err != nil {
@@ -148,7 +156,8 @@ func (s *Supervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) erro
 		return err
 	}
 	log.Printf("exec %s %s", path, strings.Join(os.Args, " "))
-	return syscall.Exec(path, os.Args, os.Environ())
+	environ := append(os.Environ(), s.environ...)
+	return syscall.Exec(path, os.Args, environ)
 }
 
 // Ping replies immediately with the sequence number provided.
