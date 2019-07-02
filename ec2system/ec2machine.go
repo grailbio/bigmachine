@@ -351,27 +351,26 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	}
 	var run func() ([]string, error)
 	if s.OnDemand {
-		params := &ec2.RunInstancesInput{
-			ImageId:               aws.String(s.AMI),
-			MaxCount:              aws.Int64(int64(count)),
-			MinCount:              aws.Int64(int64(1)),
-			BlockDeviceMappings:   blockDevices,
-			DisableApiTermination: aws.Bool(false),
-			DryRun:                aws.Bool(false),
-			EbsOptimized:          aws.Bool(s.config.EBSOptimized),
-			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
-				Arn: aws.String(s.InstanceProfile),
-			},
-			InstanceInitiatedShutdownBehavior: aws.String("terminate"),
-			InstanceType:                      aws.String(s.config.Name),
-			Monitoring: &ec2.RunInstancesMonitoringEnabled{
-				Enabled: aws.Bool(true), // Required
-			},
-			UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
-			SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
-		}
 		run = func() ([]string, error) {
-			resv, err := s.ec2.RunInstances(params)
+			resv, err := s.ec2.RunInstances(&ec2.RunInstancesInput{
+				ImageId:               aws.String(s.AMI),
+				MaxCount:              aws.Int64(int64(count)),
+				MinCount:              aws.Int64(int64(1)),
+				BlockDeviceMappings:   blockDevices,
+				DisableApiTermination: aws.Bool(false),
+				DryRun:                aws.Bool(false),
+				EbsOptimized:          aws.Bool(s.config.EBSOptimized),
+				IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
+					Arn: aws.String(s.InstanceProfile),
+				},
+				InstanceInitiatedShutdownBehavior: aws.String("terminate"),
+				InstanceType:                      aws.String(s.config.Name),
+				Monitoring: &ec2.RunInstancesMonitoringEnabled{
+					Enabled: aws.Bool(true), // Required
+				},
+				UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
+				SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -387,24 +386,23 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	} else {
 		// TODO(marius): should we use AvailabilityZoneGroup to ensure that
 		// all instances land in the same AZ?
-		params := &ec2.RequestSpotInstancesInput{
-			ValidUntil:    aws.Time(time.Now().Add(time.Minute)),
-			SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[s.Region])),
-			InstanceCount: aws.Int64(int64(count)),
-			LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
-				ImageId:             aws.String(s.AMI),
-				EbsOptimized:        aws.Bool(s.config.EBSOptimized),
-				InstanceType:        aws.String(s.config.Name),
-				BlockDeviceMappings: blockDevices,
-				UserData:            aws.String(base64.StdEncoding.EncodeToString(userData)),
-				IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
-					Arn: aws.String(s.InstanceProfile),
-				},
-				SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
-			},
-		}
 		run = func() ([]string, error) {
-			resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, params)
+			resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, &ec2.RequestSpotInstancesInput{
+				ValidUntil:    aws.Time(time.Now().Add(time.Minute)),
+				SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[s.Region])),
+				InstanceCount: aws.Int64(int64(count)),
+				LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
+					ImageId:             aws.String(s.AMI),
+					EbsOptimized:        aws.Bool(s.config.EBSOptimized),
+					InstanceType:        aws.String(s.config.Name),
+					BlockDeviceMappings: blockDevices,
+					UserData:            aws.String(base64.StdEncoding.EncodeToString(userData)),
+					IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
+						Arn: aws.String(s.InstanceProfile),
+					},
+					SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
+				},
+			})
 			if err != nil {
 				return nil, err
 			}
