@@ -19,6 +19,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/grailbio/base/dump"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/rpc"
@@ -66,6 +67,16 @@ func Start(system System) *B {
 	// TODO(marius): allow multiple sessions to share a single expvar
 	if system.Name() != "testsystem" && expvar.Get("machines") == nil {
 		expvar.Publish("machines", &machineVars{b})
+	}
+	// TODO(jcharumilind): allow multiple sessions to share dumps.
+	if system.Name() != "testsystem" {
+		// TODO(jcharumilind): Make names unique to handle the case in which a
+		// program starts multiple machines.
+		dump.Register("bigmachine-status", makeStatusDumpFunc(b))
+		// TODO(jcharumilind): Should the heap profile do a gc?
+		dump.Register("bigmachine-pprof-heap", makeProfileDumpFunc(b, "heap", 0))
+		dump.Register("bigmachine-pprof-mutex", makeProfileDumpFunc(b, "mutex", 1))
+		dump.Register("bigmachine-pprof-profile", makeProfileDumpFunc(b, "profile", 0))
 	}
 	return b
 }
@@ -219,8 +230,7 @@ func (b *B) Machines() []*Machine {
 	return snapshot
 }
 
-// HandleDebug registers diagnostic http endpoints on the provided
-// ServeMux.
+// HandleDebug registers diagnostic http endpoints on the provided ServeMux.
 func (b *B) HandleDebug(mux *http.ServeMux) {
 	b.HandleDebugPrefix("/debug/bigmachine/", mux)
 }
@@ -228,8 +238,6 @@ func (b *B) HandleDebug(mux *http.ServeMux) {
 // HandleDebugPrefix registers diagnostic http endpoints on the provided
 // ServeMux under the provided prefix.
 func (b *B) HandleDebugPrefix(prefix string, mux *http.ServeMux) {
-	mux.Handle(prefix+"pprof/profile", &profileHandler{b, "profile"})
-	mux.Handle(prefix+"pprof/heap", &profileHandler{b, "heap"})
 	mux.HandleFunc(prefix+"pprof/", b.pprofIndex)
 	mux.Handle(prefix+"status", &statusHandler{b})
 }
