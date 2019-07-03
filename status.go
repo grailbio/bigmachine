@@ -7,7 +7,6 @@ package bigmachine
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/grailbio/base/data"
-	"github.com/grailbio/base/dump"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -81,19 +79,18 @@ var statusTemplate = template.Must(template.New("status").
 	load: {{printf "%.1f %.1f %.1f" .info.LoadInfo.Averages.Load1 .info.LoadInfo.Averages.Load5 .info.LoadInfo.Averages.Load15}}
 `))
 
-func makeStatusDumpFunc(b *B) dump.Func {
-	return func(ctx context.Context, w io.Writer) error {
-		return writeStatus(ctx, b, w)
-	}
-}
+// StatusHandler implements an HTTP handler that displays machine
+// statuses.
+type statusHandler struct{ *B }
 
-func writeStatus(ctx context.Context, b *B, w io.Writer) error {
-	machines := b.Machines()
+func (s *statusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	machines := s.B.Machines()
 	sort.Slice(machines, func(i, j int) bool {
 		return machines[i].Addr < machines[j].Addr
 	})
 	infos := make([]machineInfo, len(machines))
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := errgroup.WithContext(r.Context())
 	for i, m := range machines {
 		if state := m.State(); state != Running {
 			infos[i].err = fmt.Errorf("machine state %s", state)
@@ -106,7 +103,8 @@ func writeStatus(ctx context.Context, b *B, w io.Writer) error {
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return err
+		http.Error(w, fmt.Sprint(err), 500)
+		return
 	}
 	var tw tabwriter.Writer
 	tw.Init(w, 4, 4, 1, ' ', 0)
@@ -126,18 +124,6 @@ func writeStatus(ctx context.Context, b *B, w io.Writer) error {
 		if err != nil {
 			panic(err)
 		}
-	}
-	return nil
-}
-
-// StatusHandler implements an HTTP handler that displays machine
-// statuses.
-type statusHandler struct{ *B }
-
-func (s *statusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	if err := writeStatus(r.Context(), s.B, w); err != nil {
-		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 	}
 }
 
