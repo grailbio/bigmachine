@@ -2257,6 +2257,24 @@ var Types = []Type{
 		CPUFeatures: map[string]bool{},
 	},
 	{
+		Name:         "p3dn.24xlarge",
+		EBSOptimized: true,
+		VCPU:         96,
+		Memory:       768.000000,
+		Price: map[string]float64{
+			"ap-northeast-2": 39.848,
+			"us-east-1":      31.212,
+			"us-east-2":      31.212,
+			"us-west-2":      31.212,
+		},
+		Generation: "current",
+		Virt:       "HVM",
+		NVMe:       true,
+		CPUFeatures: map[string]bool{
+			"intel_avx512": true,
+		},
+	},
+	{
 		Name:         "p2.xlarge",
 		EBSOptimized: true,
 		VCPU:         4,
