@@ -95,6 +95,14 @@ func (s *System) N() int {
 	return len(s.machines)
 }
 
+// Index returns the i'th bigmachine in the system. Index
+// panics if the index is out of range.
+func (s *System) Index(i int) *bigmachine.Machine {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.machines[i].Machine
+}
+
 // Kill kills the machine m that is under management of this system,
 // returning true if successful. If m is nil, a random machine is chosen.
 func (s *System) Kill(m *bigmachine.Machine) bool {
@@ -178,7 +186,6 @@ func (s *System) Start(_ context.Context, count int) ([]*bigmachine.Machine, err
 		mux := http.NewServeMux()
 		mux.Handle(bigmachine.RpcPrefix, server)
 		httpServer := httptest.NewServer(mux)
-
 		m := &bigmachine.Machine{
 			Addr:     httpServer.URL,
 			Maxprocs: s.Machineprocs,

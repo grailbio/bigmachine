@@ -129,6 +129,13 @@ func (c *Client) getLogger(addr string) *rateLimitingOutputter {
 // responsible for fully reading the data and closing the reader. If
 // an error occurs while the response is streamed, the returned
 // io.ReadCloser errors on read.
+//
+// Remote errors are decoded into *errors.Error and returned.
+// (Non-*errors.Error errors are converted by the server.) The RPC
+// client does not pass on errors of kind errors.Net; these are
+// converted to errors.Other. This way, any error of the kind
+// errors.Net is guaranteed to originate from the immediate call;
+// they are never from the application.
 func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, reply interface{}) (err error) {
 	done := clientstats.Start(addr, serviceMethod)
 	var (
@@ -192,11 +199,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		case methodErrorCode:
 			dec := gob.NewDecoder(resp.Body)
 			defer resp.Body.Close()
-			e := new(errors.Error)
-			if err := dec.Decode(e); err != nil {
-				return errors.E(errors.Invalid, errors.Temporary, "error while decoding error", err)
-			}
-			return e
+			return decodeError(serviceMethod, dec)
 		case 200:
 			// Wrap the actual response in a stream reader so that
 			// errors are propagated properly.
@@ -213,11 +216,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		dec := gob.NewDecoder(sizeReader)
 		switch resp.StatusCode {
 		case methodErrorCode:
-			e := new(errors.Error)
-			if err := dec.Decode(e); err != nil {
-				return errors.E(errors.Invalid, errors.Temporary, "error while decoding error for "+serviceMethod, err)
-			}
-			return e
+			return decodeError(serviceMethod, dec)
 		case 200:
 			err := dec.Decode(reply)
 			if err != nil {
@@ -259,4 +258,20 @@ func truncatef(v interface{}) string {
 	b := limitbuf.NewLogger(512)
 	fmt.Fprint(b, v)
 	return b.String()
+}
+
+// decodeErrors decodes a serialized error from the codec stream dec.
+// It translates any error with kind error.Net into errors.Other, as
+// we should not propagate network errors across network boundaries
+// as these are prone to misinterpretation.
+func decodeError(serviceMethod string, dec *gob.Decoder) error {
+	e := new(errors.Error)
+	if err := dec.Decode(e); err != nil {
+		return errors.E(errors.Invalid, errors.Temporary, "error while decoding error for "+serviceMethod, err)
+	}
+	if e.Kind == errors.Net {
+		e.Kind = errors.Other
+		e.Severity = errors.Unknown
+	}
+	return e
 }
