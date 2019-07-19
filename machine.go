@@ -558,7 +558,7 @@ func (m *Machine) Call(ctx context.Context, serviceMethod string, arg, reply int
 			fallthrough
 		case Stopped:
 			if err := m.Err(); err != nil {
-				return err
+				return errors.E(errors.Unavailable, err)
 			}
 			return errors.E(errors.Unavailable, fmt.Sprintf("machine %s stopped", m.Addr))
 		default:
