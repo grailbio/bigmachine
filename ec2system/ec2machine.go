@@ -142,9 +142,9 @@ type System struct {
 	// Flavor is the operating system flavor of the AMI.
 	Flavor Flavor
 
-	// Region is the AWS region in which to launch the system's instances.
-	// It defaults to us-west-2.
-	Region string
+	// AWSConfig is used to launch the system's instances.
+	// Default region is us-west-2.
+	AWSConfig *aws.Config
 
 	// InstanceProfile is the instance profile with which to launch the instance.
 	// This should be set if the instances need AWS credentials.
@@ -227,8 +227,11 @@ func (s *System) Init(b *bigmachine.B) error {
 	if s.AMI == "" {
 		s.AMI = "ami-4296ec3a"
 	}
-	if s.Region == "" {
-		s.Region = "us-west-2"
+	if s.AWSConfig == nil {
+		s.AWSConfig = &aws.Config{}
+	}
+	if s.AWSConfig.Region == nil {
+		s.AWSConfig.Region = aws.String("us-west-2")
 	}
 	if s.InstanceProfile == "" {
 		s.InstanceProfile = "arn:aws:iam::619867110810:instance-profile/bigmachine"
@@ -247,8 +250,8 @@ func (s *System) Init(b *bigmachine.B) error {
 	if !ok {
 		return fmt.Errorf("invalid instance type %q", s.InstanceType)
 	}
-	if s.config.Price[s.Region] == 0 {
-		return fmt.Errorf("instance type %q not available in region %s", s.InstanceType, s.Region)
+	if s.config.Price[*s.AWSConfig.Region] == 0 {
+		return fmt.Errorf("instance type %q not available in region %s", s.InstanceType, *s.AWSConfig.Region)
 	}
 
 	// Generate a unique SSH key for this session. This is used for programmatic
@@ -273,7 +276,7 @@ func (s *System) Init(b *bigmachine.B) error {
 	} else if b.IsDriver() {
 		log.Printf("failed to read ssh key from %s: %v; the user will not be able to ssh into the system", sshkeyPath, err)
 	}
-	sess, err := session.NewSession(&aws.Config{Region: aws.String(s.Region)})
+	sess, err := session.NewSession(s.AWSConfig)
 	if err != nil {
 		return err
 	}
@@ -389,7 +392,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		run = func() ([]string, error) {
 			resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, &ec2.RequestSpotInstancesInput{
 				ValidUntil:    aws.Time(time.Now().Add(time.Minute)),
-				SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[s.Region])),
+				SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[*s.AWSConfig.Region])),
 				InstanceCount: aws.Int64(int64(count)),
 				LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
 					ImageId:             aws.String(s.AMI),
