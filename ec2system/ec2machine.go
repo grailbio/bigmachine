@@ -186,6 +186,9 @@ type System struct {
 	// AdditionalUnits are added to the worker cloud-init configuration.
 	AdditionalUnits []CloudUnit
 
+	// AdditionalEC2Tags will be applied to this system's instances.
+	AdditionalEC2Tags []*ec2.Tag
+
 	privateKey *rsa.PrivateKey
 
 	config instances.Type
@@ -482,14 +485,14 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		}
 		_, err := s.ec2.CreateTags(&ec2.CreateTagsInput{
 			Resources: instanceIdsp,
-			Tags: []*ec2.Tag{
+			Tags: append([]*ec2.Tag{
 				{Key: aws.String("Name"), Value: aws.String(tag)},
 				{Key: aws.String("GOARCH"), Value: aws.String(info.Goarch)},
 				{Key: aws.String("GOOS"), Value: aws.String(info.Goos)},
 				{Key: aws.String("Digest"), Value: aws.String(info.Digest.String())},
 				{Key: aws.String("bigmachine"), Value: aws.String("true")},
 				{Key: aws.String("bigmachine:binary"), Value: aws.String(binary)},
-			},
+			}, s.AdditionalEC2Tags...),
 		})
 		if err != nil {
 			log.Error.Printf("ec2.CreateTags: %v", err)
