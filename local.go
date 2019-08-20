@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grailbio/base/config"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/log"
@@ -29,6 +30,15 @@ import (
 
 func init() {
 	gob.Register(new(localSystem))
+
+	config.Register("bigmachine/local", func(inst *config.Instance) {
+		inst.Doc = "bigmachine/local is the bigmachine instance used for local process-based clusters"
+		inst.New = func() (interface{}, error) {
+			return Local, nil
+		}
+	})
+
+	config.Default("bigmachine/system", "bigmachine/local")
 }
 
 const maxConcurrentStreams = 20000
