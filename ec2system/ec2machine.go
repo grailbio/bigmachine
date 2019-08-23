@@ -61,6 +61,7 @@ import (
 	"github.com/grailbio/bigmachine/ec2system/instances"
 	"github.com/grailbio/bigmachine/internal/authority"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/net/http2"
 	"golang.org/x/time/rate"
 )
@@ -175,7 +176,9 @@ type System struct {
 
 	// SshKeys is the list of sshkeys that installed as authorized keys
 	// in the instance. On system initialization, SshKeys is amended
-	// with the contents of $HOME/.ssh/id_rsa.pub, if it exists.
+	// with the contents of $HOME/.ssh/id_rsa.pub, if it exists, and the
+	// keys available in the SSH agent reachable by $SSH_AUTH_SOCK, if
+	// one exists.
 	SshKeys []string
 
 	// The user running the application. For tagging.
@@ -272,13 +275,18 @@ func (s *System) Init(b *bigmachine.B) error {
 	}
 	s.SshKeys = append(s.SshKeys, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(publicKey))))
 
+	var userSshKeys []string
 	sshkeyPath := os.ExpandEnv("$HOME/.ssh/id_rsa.pub")
 	sshKey, err := ioutil.ReadFile(sshkeyPath)
 	if err == nil {
-		s.SshKeys = append(s.SshKeys, string(sshKey))
-	} else if b.IsDriver() {
-		log.Printf("failed to read ssh key from %s: %v; the user will not be able to ssh into the system", sshkeyPath, err)
+		userSshKeys = append(userSshKeys, string(sshKey))
 	}
+	userSshKeys = append(userSshKeys, readSshAgentKeys()...)
+	if b.IsDriver() && len(userSshKeys) == 0 {
+		log.Printf("failed to read ssh key from %s: %v or from ssh agent; the user will not be able to ssh into the system", sshkeyPath, err)
+	}
+	s.SshKeys = append(s.SshKeys, userSshKeys...)
+
 	sess, err := session.NewSession(s.AWSConfig)
 	if err != nil {
 		return err
@@ -290,6 +298,30 @@ func (s *System) Init(b *bigmachine.B) error {
 	}
 	s.authorityContents, err = ioutil.ReadFile(authorityPath)
 	return err
+}
+
+func readSshAgentKeys() []string {
+	agentSock := os.Getenv("SSH_AUTH_SOCK")
+	if agentSock == "" {
+		log.Debug.Print("no ssh agent found, skipping adding authorized keys")
+		return nil
+	}
+	conn, err := net.Dial("unix", agentSock)
+	if err != nil {
+		log.Printf("error dialing ssh agent, skipping adding authorized keys: %v", err)
+		return nil
+	}
+	defer conn.Close()
+	ag := agent.NewClient(conn)
+	keys, err := ag.List()
+	if err != nil {
+		log.Printf("error reading from ssh agent, skipping adding authorized keys: %v", err)
+	}
+	var keyStrings []string
+	for _, key := range keys {
+		keyStrings = append(keyStrings, string(ssh.MarshalAuthorizedKey(key)))
+	}
+	return keyStrings
 }
 
 // Start launches a new machine on the EC2 spot market. Start fails
