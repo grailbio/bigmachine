@@ -31,3 +31,23 @@ func TestNetError(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+// TestClientError verifies that client errors (4XXs) are handled appropriately.
+func TestClientError(t *testing.T) {
+	srv := NewServer()
+	srv.Register("Test", new(TestService))
+	httpsrv := httptest.NewServer(srv)
+	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cause a (client) error by using an int instead of a string argument. This is a
+	// bad request that is not a temporary condition (i.e. should not be retried).
+	var notAString int
+	err = client.Call(context.Background(), httpsrv.URL, "Test.Echo", notAString, nil)
+	if err == nil {
+		t.Error("expected error")
+	} else if errors.IsTemporary(err) {
+		t.Errorf("error %v is temporary", err)
+	}
+}

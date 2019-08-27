@@ -195,15 +195,19 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	}
 	switch arg := reply.(type) {
 	case *io.ReadCloser:
-		switch resp.StatusCode {
-		case methodErrorCode:
+		switch {
+		case resp.StatusCode == methodErrorCode:
 			dec := gob.NewDecoder(resp.Body)
 			defer resp.Body.Close()
 			return decodeError(serviceMethod, dec)
-		case 200:
+		case resp.StatusCode == 200:
 			// Wrap the actual response in a stream reader so that
 			// errors are propagated properly.
 			*arg = streamReader{resp}
+		case 400 <= resp.StatusCode && resp.StatusCode < 500:
+			resp.Body.Close()
+			c.resetClient(h, serviceMethod)
+			return errors.E(errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
 		default:
 			resp.Body.Close()
 			c.resetClient(h, serviceMethod)
@@ -214,10 +218,10 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		defer resp.Body.Close()
 		sizeReader := &sizeTrackingReader{Reader: resp.Body}
 		dec := gob.NewDecoder(sizeReader)
-		switch resp.StatusCode {
-		case methodErrorCode:
+		switch {
+		case resp.StatusCode == methodErrorCode:
 			return decodeError(serviceMethod, dec)
-		case 200:
+		case resp.StatusCode == 200:
 			err := dec.Decode(reply)
 			if err != nil {
 				c.resetClient(h, serviceMethod)
@@ -228,6 +232,9 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 				log.Outputf(largeReplyLogger, log.Info, "call %s %s: large reply: %d bytes", addr, serviceMethod, replyBytes)
 			}
 			return err
+		case 400 <= resp.StatusCode && resp.StatusCode < 500:
+			c.resetClient(h, serviceMethod)
+			return errors.E(errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
 		default:
 			c.resetClient(h, serviceMethod)
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
