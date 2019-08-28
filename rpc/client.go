@@ -10,6 +10,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"sync"
@@ -93,11 +94,11 @@ func (c *Client) getClient(addr string) *clientState {
 	return h
 }
 
-func (c *Client) resetClient(h *clientState, serviceMethod string) {
+func (c *Client) resetClient(h *clientState, serviceMethod, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.clients[h.addr] == h {
-		log.Outputf(c.getLogger(h.addr), log.Error, "resetting http client %s while calling to %s", h.addr, serviceMethod)
+		log.Outputf(c.getLogger(h.addr), log.Error, "resetting http client %s while calling to %s because %s", h.addr, serviceMethod, reason)
 		if h.cached != nil {
 			h.cached.CloseIdleConnections()
 		}
@@ -184,10 +185,10 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	switch err {
 	case nil:
 	case context.DeadlineExceeded, context.Canceled:
-		c.resetClient(h, serviceMethod)
+		c.resetClient(h, serviceMethod, "deadline exceeded or cancelled")
 		return err
 	default:
-		c.resetClient(h, serviceMethod)
+		c.resetClient(h, serviceMethod, "temporary network error")
 		return errors.E(errors.Net, errors.Temporary, err)
 	}
 	if InjectFailures {
@@ -205,12 +206,16 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			// errors are propagated properly.
 			*arg = streamReader{resp}
 		case 400 <= resp.StatusCode && resp.StatusCode < 500:
-			resp.Body.Close()
-			c.resetClient(h, serviceMethod)
+			body, err := ioutil.ReadAll(resp.Body)
+			// Nothing to do if closing fails.
+			_ = resp.Body.Close()
+			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: client error %s, %v, %v", url, resp.Status, string(body), err))
 			return errors.E(errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
 		default:
-			resp.Body.Close()
-			c.resetClient(h, serviceMethod)
+			body, err := ioutil.ReadAll(resp.Body)
+			// Nothing to do if closing fails.
+			_ = resp.Body.Close()
+			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: bad reply status %s, %v, %v", url, resp.Status, string(body), err))
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 		return nil
@@ -224,7 +229,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		case resp.StatusCode == 200:
 			err := dec.Decode(reply)
 			if err != nil {
-				c.resetClient(h, serviceMethod)
+				c.resetClient(h, serviceMethod, "error decoding reply")
 				err = errors.E(errors.Invalid, errors.Temporary, "error while decoding reply for "+serviceMethod, err)
 			}
 			replyBytes = sizeReader.Len()
@@ -233,10 +238,12 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			}
 			return err
 		case 400 <= resp.StatusCode && resp.StatusCode < 500:
-			c.resetClient(h, serviceMethod)
+			body, err := ioutil.ReadAll(resp.Body)
+			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: client error %s, %v, %v", url, resp.Status, string(body), err))
 			return errors.E(errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
 		default:
-			c.resetClient(h, serviceMethod)
+			body, err := ioutil.ReadAll(resp.Body)
+			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: bad reply status %s, %v, %v", url, resp.Status, string(body), err))
 			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
 		}
 	}
