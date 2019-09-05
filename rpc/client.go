@@ -98,7 +98,7 @@ func (c *Client) resetClient(h *clientState, serviceMethod, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.clients[h.addr] == h {
-		log.Outputf(c.getLogger(h.addr), log.Error, "resetting http client %s while calling to %s because %s", h.addr, serviceMethod, reason)
+		log.Outputf(c.getLogger(h.addr), log.Error, "resetting http client %s while calling to %s: %s", h.addr, serviceMethod, reason)
 		if h.cached != nil {
 			h.cached.CloseIdleConnections()
 		}
