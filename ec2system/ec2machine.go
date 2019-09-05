@@ -53,7 +53,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/grailbio/base/errors"
-	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
 	"github.com/grailbio/base/sync/once"
@@ -718,14 +717,16 @@ func (s *System) cloudConfig() *cloudConfig {
 		Owner:       "root",
 		Content: tmpl(`
 		#!/bin/bash
-		set -ex
+		set -e
 		bin=/tmp/ec2boot
-		curl {{.binary}} >$bin
+		curl -s {{.binary}} >$bin
 		chmod +x $bin
 		export BIGMACHINE_MODE=machine
 		export BIGMACHINE_SYSTEM=ec2
 		export BIGMACHINE_ADDR=:{{.port}}
-		exec $bin
+		$bin || true
+		sleep 30
+		exit 1
 		`, args{"binary": s.Binary, "port": port}),
 	})
 	c.AppendFile(CloudFile{
@@ -753,6 +754,10 @@ func (s *System) cloudConfig() *cloudConfig {
 	// Note: LimitNOFILE must be set explicitly, instead of just "infinity", since
 	// the "inifinity" will expand the process'es current hard limit, which is
 	// typically 1M.
+	//
+	// We also adjust bootmachine's OOM score so that it will be killed over
+	// things like the ssh processes that might monitor the kernel message
+	// buffers.
 	c.AppendUnit(CloudUnit{
 		Name:    "bootmachine.service",
 		Enable:  true,
@@ -771,6 +776,7 @@ func (s *System) cloudConfig() *cloudConfig {
 			OnFailureJobMode=replace-irreversibly
 			{{end}}
 			[Service]
+			OOMScoreAdjust=1000
 			Type=oneshot
 			LimitNOFILE={{.nropen}}
 			{{.environ}}
@@ -842,13 +848,20 @@ func (s *System) Exit(code int) {
 	os.Exit(code)
 }
 
-// Tail forwards the system's standard IO to the provided writer.
-func (s *System) Tail(ctx context.Context, w io.Writer, m *bigmachine.Machine) error {
+func (s *System) Tail(ctx context.Context, m *bigmachine.Machine) (io.Reader, error) {
 	u, err := url.Parse(m.Addr)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return s.tail(ctx, u.Hostname(), w)
+	return s.run(ctx, u.Hostname(), "sudo journalctl --output=cat -f -u bootmachine"), nil
+}
+
+func (s *System) Read(ctx context.Context, m *bigmachine.Machine, filename string) (io.Reader, error) {
+	u, err := url.Parse(m.Addr)
+	if err != nil {
+		return nil, err
+	}
+	return s.run(ctx, u.Hostname(), "cat "+filename), nil
 }
 
 func (s *System) dialSSH(addr string) (*ssh.Client, error) {
@@ -874,31 +887,36 @@ func (s *System) dialSSH(addr string) (*ssh.Client, error) {
 
 var sshRetryPolicy = retry.Backoff(time.Second, 10*time.Second, 1.5)
 
-// Tail copies the output from the bigmachine process on the machine
-// at the provided address. The machine should have been booted by
-// the same System instance. Each line of output is prefixed with the
-// address.
-func (s *System) tail(ctx context.Context, addr string, w io.Writer) error {
-	for retries := 0; ; retries++ {
-		err := s.tailBootmachine(addr, w)
-		if err == nil {
-			retries = 0
-			continue
+// run runs the provided command on the remote machine named by the provided
+// address; the returned io.Reader is a byte stream of the command's combined
+// output (standard output and standard error). run may retry the command multiple
+// times; the returned reader is the concatenated output of all tries.
+func (s *System) run(ctx context.Context, addr string, command string) io.Reader {
+	r, w := io.Pipe()
+	go func() {
+		var err error
+		for retries := 0; ; retries++ {
+			err = s.runSSH(addr, w, command)
+			if err == nil {
+				break
+			}
+			log.Error.Printf("tail %v: %v", addr, err)
+			if strings.HasPrefix(err.Error(), "ssh: unable to authenticate") {
+				break
+			}
+			if _, ok := err.(*ssh.ExitError); ok {
+				break
+			}
+			if err = retry.Wait(ctx, sshRetryPolicy, retries); err != nil {
+				break
+			}
 		}
-		log.Error.Printf("tail %v: %v", addr, err)
-		if strings.HasPrefix(err.Error(), "ssh: unable to authenticate") {
-			return err
-		}
-		if _, ok := err.(*ssh.ExitError); ok {
-			return err
-		}
-		if err := retry.Wait(ctx, sshRetryPolicy, retries); err != nil {
-			return err
-		}
-	}
+		w.CloseWithError(err)
+	}()
+	return r
 }
 
-func (s *System) tailBootmachine(addr string, w io.Writer) error {
+func (s *System) runSSH(addr string, w io.Writer, command string) error {
 	conn, err := s.dialSSH(addr)
 	if err != nil {
 		return err
@@ -909,10 +927,9 @@ func (s *System) tailBootmachine(addr string, w io.Writer) error {
 		return err
 	}
 	defer sess.Close()
-	prefix := addr + ": "
-	sess.Stdout = iofmt.PrefixWriter(w, prefix)
-	sess.Stderr = iofmt.PrefixWriter(w, prefix)
-	return sess.Run("sudo journalctl --output=cat  -f -u bootmachine")
+	sess.Stdout = w
+	sess.Stderr = w
+	return sess.Run(command)
 }
 
 // Shutdown is a no-op.

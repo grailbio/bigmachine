@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/gob"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -19,9 +18,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/internal/authority"
+	bigioutil "github.com/grailbio/bigmachine/internal/ioutil"
 	"github.com/grailbio/bigmachine/internal/tee"
 	"golang.org/x/net/http2"
 )
@@ -172,17 +173,29 @@ func (*localSystem) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration
 	return
 }
 
-func (s *localSystem) Tail(ctx context.Context, w io.Writer, m *Machine) error {
+func (s *localSystem) Tail(ctx context.Context, m *Machine) (io.Reader, error) {
 	s.mu.Lock()
 	muxer := s.muxers[m]
 	s.mu.Unlock()
 	if muxer == nil {
-		return errors.New("machine not under management")
+		return nil, errors.New("machine not under management")
 	}
-	cancel := muxer.Tee(w)
-	<-ctx.Done()
-	cancel()
-	return nil
+	r, w := io.Pipe()
+	go func() {
+		cancel := muxer.Tee(w)
+		<-ctx.Done()
+		cancel()
+		w.CloseWithError(ctx.Err())
+	}()
+	return r, nil
+}
+
+func (s *localSystem) Read(ctx context.Context, m *Machine, filename string) (io.Reader, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	return bigioutil.NewClosingReader(f), nil
 }
 
 func getFreeTCPPort() (int, error) {

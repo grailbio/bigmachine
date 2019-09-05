@@ -49,6 +49,10 @@ type System interface {
 	// KeepaliveConfig returns the various keepalive timeouts that should
 	// be used to maintain keepalives for machines started by this system.
 	KeepaliveConfig() (period, timeout, rpcTimeout time.Duration)
-	// Tail should tail (follow) machine m's log output to the provided writer.
-	Tail(ctx context.Context, w io.Writer, m *Machine) error
+	// Tail returns a reader that follows the bigmachine process logs.
+	Tail(ctx context.Context, m *Machine) (io.Reader, error)
+	// Read returns a reader that reads the contents of the provided filename
+	// on the host. This is done outside of the supervisor to support external
+	// monitoring of the host.
+	Read(ctx context.Context, m *Machine, filename string) (io.Reader, error)
 }

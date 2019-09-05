@@ -5,6 +5,7 @@
 package bigmachine
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,11 +14,13 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
@@ -377,17 +380,28 @@ func (m *Machine) loop(ctx context.Context, system System) {
 		}
 	}
 
-	// Switch to running state now that all of the services are registered.
-	m.setState(Running)
-
 	if system != nil {
 		go func() {
-			err := system.Tail(ctx, os.Stderr, m)
+			r, err := system.Tail(ctx, m)
+			if err == nil {
+				_, err = io.Copy(iofmt.PrefixWriter(os.Stderr, m.Addr+": "), r)
+			}
 			if err != nil && err != context.Canceled {
 				log.Error.Printf("%s: tail: %s", m.Addr, err)
 			}
 		}()
+
+		// Note that this means that OOMs are detected only by the owner
+		// process. This is probably ok in most cases, but we should also
+		// consider adding a system status propagation mechanism, so that
+		// there is a global notion of a system's status. Note that for applications
+		// like Bigslice, this mechanism is sufficient since machine status
+		// is maintained entirely by the coordinator/scheduler node.
+		go m.tryMonitorOOMs(ctx, system)
 	}
+
+	// Switch to running state now that all of the services are registered.
+	m.setState(Running)
 
 	const keepalive = 5 * time.Minute
 	for {
@@ -436,6 +450,35 @@ func (m *Machine) loop(ctx context.Context, system System) {
 			m.setError(ctx.Err())
 			return
 		}
+	}
+}
+
+// tryMonitorOOMs attempts to monitor the kernel log for OOMs, and whether
+// they pertain to the supervised process. If an OOM is detected, machine m
+// is failed.
+func (m *Machine) tryMonitorOOMs(ctx context.Context, system System) {
+	var pid int
+	if err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Getpid", struct{}{}, &pid); err != nil {
+		log.Error.Printf("%s: could not get pid: %v: cannot monitor for OOMs", m.Addr, err)
+		return
+	}
+	r, err := system.Read(ctx, m, "/dev/kmsg")
+	if err != nil {
+		log.Error.Printf("%s: could not read kernel message buffer: %v: cannot monitor for OOMs", m.Addr, err)
+		return
+	}
+	look := fmt.Sprintf("Out of memory: Kill process %d", pid)
+	scan := bufio.NewScanner(r)
+	for scan.Scan() {
+		if log.At(log.Debug) {
+			log.Debug.Printf("%s kmsg: %s", m.Addr, scan.Text())
+		}
+		if strings.Contains(scan.Text(), look) {
+			m.setError(errors.E(errors.OOM, "bigmachine process killed by the kernel"))
+		}
+	}
+	if err := scan.Err(); err != nil && err != context.Canceled {
+		log.Error.Printf("%s: could not tail kernel message buffer: %v: cannot monitor for OOMs", m.Addr, err)
 	}
 }
 

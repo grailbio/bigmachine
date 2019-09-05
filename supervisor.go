@@ -306,6 +306,12 @@ func (s *Supervisor) Keepalive(ctx context.Context, next time.Duration, reply *k
 	}
 }
 
+// Getpid returns the PID of the supervisor process.
+func (s *Supervisor) Getpid(ctx context.Context, _ struct{}, pid *int) error {
+	*pid = os.Getpid()
+	return nil
+}
+
 // An Expvar is a snapshot of an expvar.
 type Expvar struct {
 	Key   string

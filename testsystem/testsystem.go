@@ -15,10 +15,13 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bigmachine"
+	"github.com/grailbio/bigmachine/internal/ioutil"
 	"github.com/grailbio/bigmachine/rpc"
 )
 
@@ -222,7 +225,14 @@ func (s *System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
 	return
 }
 
-func (s *System) Tail(ctx context.Context, w io.Writer, m *bigmachine.Machine) error {
-	// Cannot tail test systems since it's the same process.
-	return nil
+func (s *System) Tail(ctx context.Context, m *bigmachine.Machine) (io.Reader, error) {
+	return nil, errors.E(errors.NotSupported)
+}
+
+func (s *System) Read(ctx context.Context, m *bigmachine.Machine, filename string) (io.Reader, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	return ioutil.NewClosingReader(f), nil
 }
