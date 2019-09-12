@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/fatbin"
 	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
@@ -509,15 +510,15 @@ func (m *Machine) context(ctx context.Context) (mctx context.Context, cancel fun
 }
 
 func (m *Machine) exec(ctx context.Context) error {
+	self, err := fatbin.Self()
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	var info Info
 	if err := m.call(ctx, "Supervisor.Info", struct{}{}, &info); err != nil {
 		return err
-	}
-	if info.Goos != runtime.GOOS || info.Goarch != runtime.GOARCH {
-		return fmt.Errorf("invalid binary: need %s %s, have %s %s",
-			info.Goarch, info.Goos, runtime.GOARCH, runtime.GOOS)
 	}
 	// First set the correct environment and arguments.
 	if err := m.call(ctx, "Supervisor.Setenv", m.environ, nil); err != nil {
@@ -526,7 +527,7 @@ func (m *Machine) exec(ctx context.Context) error {
 	if err := m.call(ctx, "Supervisor.Setargs", os.Args, nil); err != nil {
 		return err
 	}
-	rc, err := binary()
+	rc, err := self.Open(info.Goos, info.Goarch)
 	if err != nil {
 		return err
 	}

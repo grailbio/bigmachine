@@ -53,6 +53,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/fatbin"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
 	"github.com/grailbio/base/sync/once"
@@ -218,12 +219,18 @@ func (s *System) Name() string { return "ec2" }
 // constructor furnished by the AWS SDK.
 func (s *System) Init(b *bigmachine.B) error {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
-		// TODO(marius): it would be nice to be able to provide companion
-		// binaries that are of the correct architecture. (Or even build
-		// them, e.g., if we have a Go package and a command like
-		// "bigmachine run package...".) On the other hand, it's very nice
-		// to have a single, static binary for this.
-		return errors.E(errors.Precondition, "ec2machine is currently supported only on linux/amd64")
+		self, err := fatbin.Self()
+		if err != nil {
+			return err
+		}
+		// TODO(marius): don't hardcode this as being linux/amd64
+		rc, err := self.Open("linux", "amd64")
+		if err == fatbin.ErrNoSuchImage {
+			return errors.E(errors.Precondition, "binary has no linux/amd64 image; consider compiling with fatgo or run on linux/amd64")
+		} else if err != nil {
+			return err
+		}
+		rc.Close()
 	}
 	if s.InstanceType == "" {
 		s.InstanceType = "m3.medium"
