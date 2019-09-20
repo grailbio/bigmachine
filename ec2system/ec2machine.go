@@ -30,7 +30,6 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/gob"
 	"flag"
 	"fmt"
 	"html/template"
@@ -81,7 +80,9 @@ const (
 	maxInstanceDataVolumes = 25
 )
 
-func init() { gob.Register(new(System)) }
+func init() {
+	bigmachine.RegisterSystem("ec2", new(System))
+}
 
 var (
 	// RetryPolicy is used to retry failed EC2 API calls.

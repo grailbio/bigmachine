@@ -6,9 +6,14 @@ package bigmachine
 
 import (
 	"context"
+	"encoding/gob"
 	"io"
 	"net/http"
+	"os"
+	"sync"
 	"time"
+
+	"github.com/grailbio/base/must"
 )
 
 // A System implements a set of methods to set up a bigmachine and
@@ -55,4 +60,39 @@ type System interface {
 	// on the host. This is done outside of the supervisor to support external
 	// monitoring of the host.
 	Read(ctx context.Context, m *Machine, filename string) (io.Reader, error)
+}
+
+var (
+	systemsMu sync.Mutex
+	systems   = make(map[string]System)
+)
+
+// RegisterSystem is used by systems implementation to register a
+// system implementation. RegisterSystem registers the implementation
+// with gob, so that instances can be transmitted over the wire. It
+// also registers the provided System instance as a default to use
+// for the name to support bigmachine.Bootstrap.
+func RegisterSystem(name string, system System) {
+	gob.Register(system)
+	systemsMu.Lock()
+	defer systemsMu.Unlock()
+	must.Nil(systems[name], "system ", name, " already registered")
+	systems[name] = system
+}
+
+// Bootstrap provides an alternative path to bootstrap a bigmachine
+// node. If a binary follows a non-deterministic path to
+// bigmachine.Start, or wishes to forego needless initialization, it
+// may call Bootstrap. Bootstrap is a no-op if the binary is not
+// running as a bigmachine worker; if it is, Bootstrap never returns.
+//
+// This is an experimental API.
+func Bootstrap() {
+	name := os.Getenv("BIGMACHINE_SYSTEM")
+	if name == "" {
+		return
+	}
+	system, ok := systems[name]
+	must.True(ok, "system ", name, " not found")
+	must.Never("start returned: ", Start(system))
 }

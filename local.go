@@ -7,7 +7,6 @@ package bigmachine
 import (
 	"context"
 	"crypto/tls"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,8 +28,6 @@ import (
 )
 
 func init() {
-	gob.Register(new(localSystem))
-
 	config.Register("bigmachine/local", func(inst *config.Instance) {
 		inst.Doc = "bigmachine/local is the bigmachine instance used for local process-based clusters"
 		inst.New = func() (interface{}, error) {
@@ -39,6 +36,8 @@ func init() {
 	})
 
 	config.Default("bigmachine/system", "bigmachine/local")
+
+	RegisterSystem("local", Local)
 }
 
 const maxConcurrentStreams = 20000
