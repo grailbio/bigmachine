@@ -82,6 +82,8 @@ func New() *System {
 // B returns the bigmachine session associated with this system.
 func (s *System) B() *bigmachine.B { return s.b }
 
+// Wait returns the number of live machines in the test system, blocking until
+// there are at least n.
 func (s *System) Wait(n int) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
