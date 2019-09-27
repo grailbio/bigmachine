@@ -66,7 +66,6 @@ import (
 )
 
 const (
-	port                 = 2000
 	maxConcurrentStreams = 20000
 	authorityPath        = "/tmp/bigmachine.pem"
 
@@ -169,7 +168,7 @@ type System struct {
 	// contains the ec2machine implementation and runs bigmachine's
 	// supervisor service. By default the following binary is used:
 	//
-	//	http://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.2
+	//	http://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3
 	//
 	// The binary is fetched by a vanilla curl(1) invocation, and thus needs
 	// to be publicly available.
@@ -256,7 +255,7 @@ func (s *System) Init(b *bigmachine.B) error {
 		s.Diskspace = 200
 	}
 	if s.Binary == "" {
-		s.Binary = "http://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.2"
+		s.Binary = "http://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3"
 	}
 	var ok bool
 	s.config, ok = instanceTypes[s.InstanceType]
@@ -568,7 +567,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			return nil, fmt.Errorf("ec2.DescribeInstances %s[%d]: no public DNS name", aws.StringValue(instance.InstanceId), i)
 		}
 		machines[i] = new(bigmachine.Machine)
-		machines[i].Addr = fmt.Sprintf("https://%s:%d/", *instance.PublicDnsName, port)
+		machines[i].Addr = fmt.Sprintf("https://%s/", *instance.PublicDnsName)
 		machines[i].Maxprocs = int(s.config.VCPU)
 	}
 	return machines, nil
@@ -731,11 +730,11 @@ func (s *System) cloudConfig() *cloudConfig {
 		chmod +x $bin
 		export BIGMACHINE_MODE=machine
 		export BIGMACHINE_SYSTEM=ec2
-		export BIGMACHINE_ADDR=:{{.port}}
-		$bin || true
+		export BIGMACHINE_ADDR=:{{443}}
+		$bin -log=debug || true
 		sleep 30
 		exit 1
-		`, args{"binary": s.Binary, "port": port}),
+		`, args{"binary": s.Binary}),
 	})
 	c.AppendFile(CloudFile{
 		Permissions: "0644",

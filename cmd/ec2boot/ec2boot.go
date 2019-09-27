@@ -8,12 +8,16 @@
 package main
 
 import (
+	"flag"
+
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/ec2system"
 )
 
 func main() {
+	log.AddFlags()
+	flag.Parse()
 	bigmachine.Start(ec2system.Instance)
 	log.Fatal("bigmachine.Start returned")
 }
