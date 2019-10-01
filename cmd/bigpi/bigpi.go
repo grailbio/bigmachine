@@ -118,8 +118,10 @@ func (circlePI) Sample(ctx context.Context, n uint64, m *uint64) error {
 }
 
 func main() {
-	nsamples := flag.Int("n", 1e10, "number of samples to make")
-	nmachine := flag.Int("nmach", 5, "number of machines to provision for the task")
+	var (
+		nsamples = flag.Int("n", 1e10, "number of samples to make")
+		nmachine = flag.Int("nmach", 5, "number of machines to provision for the task")
+	)
 	log.AddFlags()
 	flag.Parse()
 	b := driver.Start()
@@ -132,11 +134,11 @@ func main() {
 	}()
 	ctx := context.Background()
 
-	// Start the desired number of machines.
-	services := bigmachine.Services{
+	// Start the desired number of machines,
+	// each with the circlePI service.
+	machines, err := b.Start(ctx, *nmachine, bigmachine.Services{
 		"PI": circlePI{},
-	}
-	machines, err := b.Start(ctx, *nmachine, services)
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
