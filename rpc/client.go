@@ -170,7 +170,10 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		b := new(bytes.Buffer)
 		enc := gob.NewEncoder(b)
 		if err := enc.Encode(arg); err != nil {
-			return errors.E(errors.Invalid, err)
+			// Because we are writing into a Buffer, any error we see is a
+			// failure to encode, which will not succeed on retry without
+			// intervention.
+			return errors.E(errors.Fatal, errors.Invalid, err)
 		}
 		requestBytes = b.Len()
 		if requestBytes > largeRpcPayload {
@@ -210,7 +213,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			// Nothing to do if closing fails.
 			_ = resp.Body.Close()
 			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: client error %s, %v, %v", url, resp.Status, string(body), err))
-			return errors.E(errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
+			return errors.E(errors.Fatal, errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
 		default:
 			body, err := ioutil.ReadAll(resp.Body)
 			// Nothing to do if closing fails.
@@ -240,7 +243,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		case 400 <= resp.StatusCode && resp.StatusCode < 500:
 			body, err := ioutil.ReadAll(resp.Body)
 			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: client error %s, %v, %v", url, resp.Status, string(body), err))
-			return errors.E(errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
+			return errors.E(errors.Fatal, errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
 		default:
 			body, err := ioutil.ReadAll(resp.Body)
 			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: bad reply status %s, %v, %v", url, resp.Status, string(body), err))
