@@ -26,7 +26,7 @@ func init() {
 		diskspace := constr.Int("diskspace", 200, "the amount of (root) disk space to allocate")
 		dataspace := constr.Int("dataspace", 0, "the amount of scratch/data space to allocate")
 		constr.StringVar(&system.Binary, "binary",
-			"http://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3",
+			"https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3",
 			"the bootstrap bigmachine binary with which machines are launched")
 		sshkeys := constr.String("sshkey", "", "comma-separated list of ssh keys to be installed")
 		constr.StringVar(&system.Username, "username", "", "user name for tagging purposes")

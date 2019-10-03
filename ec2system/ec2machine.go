@@ -168,7 +168,7 @@ type System struct {
 	// contains the ec2machine implementation and runs bigmachine's
 	// supervisor service. By default the following binary is used:
 	//
-	//	http://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3
+	//	https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3
 	//
 	// The binary is fetched by a vanilla curl(1) invocation, and thus needs
 	// to be publicly available.
@@ -255,7 +255,7 @@ func (s *System) Init(b *bigmachine.B) error {
 		s.Diskspace = 200
 	}
 	if s.Binary == "" {
-		s.Binary = "http://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3"
+		s.Binary = "https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3"
 	}
 	var ok bool
 	s.config, ok = instanceTypes[s.InstanceType]
