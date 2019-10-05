@@ -45,7 +45,7 @@ type System interface {
 	Start(ctx context.Context, n int) ([]*Machine, error)
 	// Exit is called to terminate a machine with the provided exit code.
 	Exit(int)
-	// Shutdown is called on graceful driver exit. It's should be used to
+	// Shutdown is called on graceful driver exit. It should be used to
 	// perform system tear down. It is not guaranteed to be called.
 	Shutdown()
 	// Maxprocs returns the maximum number of processors per machine,
