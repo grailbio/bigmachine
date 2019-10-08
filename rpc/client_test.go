@@ -21,10 +21,10 @@ func TestNetError(t *testing.T) {
 	err := client.Call(context.Background(), url, "Test.ErrorError", e, nil)
 	if err == nil {
 		t.Error("expected error")
-	} else if errors.Is(errors.Net, err) {
-		t.Errorf("error %v is a network error", err)
-	} else if got, want := err.Error(), "some network error"; got != want {
-		t.Errorf("got %v, want %v", got, want)
+	} else if !errors.Is(errors.Remote, err) {
+		t.Errorf("error %v is not a remote error", err)
+	} else if !errors.Match(e, errors.Recover(err).Err) {
+		t.Errorf("error %v does not match expected error %v", err, e)
 	}
 }
 

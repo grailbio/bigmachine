@@ -61,7 +61,14 @@ func TestServer(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if got, want := err.Error(), "the error message"; got != want {
+	if !errors.Is(errors.Remote, err) {
+		t.Errorf("expected remote error")
+	}
+	cause := errors.Recover(err).Err
+	if cause == nil {
+		t.Fatalf("expected remote error to have a cause")
+	}
+	if got, want := cause.Error(), "the error message"; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 	// Just test that nil replies just discard the result.
@@ -72,8 +79,12 @@ func TestServer(t *testing.T) {
 	e := errors.E(errors.Precondition, "xyz", err)
 	err = client.Call(ctx, httpsrv.URL, "Test.ErrorError", e, nil)
 	if err == nil {
-		t.Error("expected error")
-	} else if !errors.Match(e, err) {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(errors.Remote, err) {
+		t.Errorf("expected remote error")
+	}
+	if !errors.Match(e, errors.Recover(err).Err) {
 		t.Errorf("error %v does not match expected error %v", err, e)
 	}
 }
