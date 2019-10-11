@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -160,6 +161,7 @@ func TestCallTimeout(t *testing.T) {
 }
 
 func TestMachineContext(t *testing.T) {
+	log.SetFlags(log.Llongfile)
 	m, supervisor, shutdown := newTestMachine(t)
 	defer shutdown()
 	supervisor.Hung = true
