@@ -154,6 +154,13 @@ type System struct {
 	// SecurityGroup is the security group into which instances are launched.
 	SecurityGroup string
 
+	// SecurityGroups are the security group into which instances are launched.
+	// If set, it used in preference to SecurityGroup above.
+	SecurityGroups []string
+
+	// Subnet is the subnet into which instances are launched.
+	Subnet string
+
 	// Diskspace is the amount of disk space in GiB allocated
 	// to the instance's root EBS volume. Its default is 200.
 	Diskspace uint
@@ -390,7 +397,15 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	var run func() ([]string, error)
 	if s.OnDemand {
 		run = func() ([]string, error) {
+			securityGroups := []*string{aws.String(s.SecurityGroup)}
+			if len(s.SecurityGroups) > 0 {
+				securityGroups = make([]*string, len(s.SecurityGroups))
+				for i := range s.SecurityGroups {
+					securityGroups[i] = aws.String(s.SecurityGroups[i])
+				}
+			}
 			resv, err := s.ec2.RunInstances(&ec2.RunInstancesInput{
+				SubnetId:              aws.String(s.Subnet),
 				ImageId:               aws.String(s.AMI),
 				MaxCount:              aws.Int64(int64(count)),
 				MinCount:              aws.Int64(int64(1)),
@@ -407,9 +422,10 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 					Enabled: aws.Bool(true), // Required
 				},
 				UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
-				SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
+				SecurityGroupIds: securityGroups,
 			})
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "XXX: %v\n", err)
 				return nil, err
 			}
 			if len(resv.Instances) == 0 {
@@ -442,6 +458,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				},
 			})
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "YYY: %v\n", err)
 				return nil, err
 			}
 			if len(resp.SpotInstanceRequests) == 0 {
@@ -557,14 +574,29 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	}
 	machines := make([]*bigmachine.Machine, len(instanceIds))
 	for i, instance := range describeInstance.Reservations[0].Instances {
-		if instance.PublicDnsName == nil || *instance.PublicDnsName == "" {
-			return nil, fmt.Errorf("ec2.DescribeInstances %s[%d]: no public DNS name", aws.StringValue(instance.InstanceId), i)
+		addr := getAddress(instance)
+		if len(addr) == 0 {
+			return nil, fmt.Errorf("ec2.DescribeInstances %s[%d]: no dns name or ip addresss available", aws.StringValue(instance.InstanceId), i)
 		}
 		machines[i] = new(bigmachine.Machine)
-		machines[i].Addr = fmt.Sprintf("https://%s/", *instance.PublicDnsName)
+		machines[i].Addr = fmt.Sprintf("https://%s/", addr)
 		machines[i].Maxprocs = int(s.config.VCPU)
 	}
 	return machines, nil
+}
+
+func getAddress(instance *ec2.Instance) string {
+	for _, ptr := range []*string{
+		instance.PublicDnsName,
+		instance.PublicIpAddress,
+		instance.PrivateDnsName,
+		instance.PrivateIpAddress,
+	} {
+		if val := aws.StringValue(ptr); len(val) > 0 {
+			return val
+		}
+	}
+	return ""
 }
 
 func (s *System) sliceConfig() (nslice int, sliceSize int64) {

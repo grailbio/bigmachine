@@ -337,6 +337,7 @@ func (m *Machine) loop(ctx context.Context, system System) {
 		// machine unresponsive, because it will not have a chance to reply
 		// to the exec call. We give it some time to recover.
 		err := m.exec(ctx)
+
 		// We expect an error since the process is execed before it has a chance
 		// to reply. We check at least that the error comes from the right place
 		// in the stack; other errors (e.g., context cancellations) result in a startup
@@ -552,7 +553,8 @@ func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply int
 			}
 		}()
 	}
-	return m.client.Call(ctx, m.Addr, serviceMethod, arg, reply)
+	err = m.client.Call(ctx, m.Addr, serviceMethod, arg, reply)
+	return err
 }
 
 func (m *Machine) retryCall(ctx context.Context, overallTimeout, rpcTimeout time.Duration, serviceMethod string, arg, reply interface{}) error {
