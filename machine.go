@@ -333,12 +333,10 @@ func (m *Machine) loop(ctx context.Context, system System) {
 			log.Error.Printf("Keepalive %v: %v", m.Addr, err)
 		}
 		cancel()
-		log.Printf("Cancelled....")
 		// Exec the current binary onto the machine. This will make the
 		// machine unresponsive, because it will not have a chance to reply
 		// to the exec call. We give it some time to recover.
 		err := m.exec(ctx)
-		log.Printf("exec errr....: %v", err)
 
 		// We expect an error since the process is execed before it has a chance
 		// to reply. We check at least that the error comes from the right place
@@ -539,7 +537,6 @@ func (m *Machine) exec(ctx context.Context) error {
 }
 
 func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply interface{}) (err error) {
-	log.Printf(">>>>>> calling: %v", serviceMethod)
 	if log.At(log.Debug) {
 		var deadline string
 		if d, ok := ctx.Deadline(); ok {
@@ -557,7 +554,6 @@ func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply int
 		}()
 	}
 	err = m.client.Call(ctx, m.Addr, serviceMethod, arg, reply)
-	log.Printf(">>>>>> called: %v: %v", serviceMethod, err)
 	return err
 }
 
