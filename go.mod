@@ -3,10 +3,10 @@ module github.com/grailbio/bigmachine
 go 1.12
 
 require (
-	github.com/aws/aws-sdk-go v1.25.8
+	github.com/aws/aws-sdk-go v1.25.10
 	github.com/google/pprof v0.0.0-20190930153522-6ce02741cba3
-	github.com/grailbio/base v0.0.2-0.20191010230300-5f64930c0f7d
-	github.com/grailbio/testutil v0.0.2-0.20190910222532-7f08e0a97d25
+	github.com/grailbio/base v0.0.3
+	github.com/grailbio/testutil v0.0.3
 	github.com/shirou/gopsutil v2.19.9+incompatible
 	golang.org/x/crypto v0.0.0-20191002192127-34f69633bfdc
 	golang.org/x/net v0.0.0-20191007182048-72f939374954
