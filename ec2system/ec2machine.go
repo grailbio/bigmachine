@@ -252,12 +252,6 @@ func (s *System) Init(b *bigmachine.B) error {
 	if s.AWSConfig.Region == nil {
 		s.AWSConfig.Region = aws.String("us-west-2")
 	}
-	if s.InstanceProfile == "" {
-		s.InstanceProfile = "arn:aws:iam::619867110810:instance-profile/bigmachine"
-	}
-	if s.SecurityGroup == "" {
-		s.SecurityGroup = "sg-7390e50c"
-	}
 	if s.Diskspace == 0 {
 		s.Diskspace = 200
 	}
