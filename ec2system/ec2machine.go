@@ -444,6 +444,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	if len(sshKeyName) == 0 {
 		log.Printf("none of the specified ssh keys are known to AWS")
 	}
+
 	if s.OnDemand {
 		run = func() ([]string, error) {
 			resv, err := s.ec2.RunInstances(&ec2.RunInstancesInput{
