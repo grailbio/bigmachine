@@ -425,7 +425,6 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				SecurityGroupIds: securityGroups,
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "XXX: %v\n", err)
 				return nil, err
 			}
 			if len(resv.Instances) == 0 {
