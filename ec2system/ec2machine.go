@@ -395,15 +395,15 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		})
 	}
 	var run func() ([]string, error)
+	securityGroups := []*string{aws.String(s.SecurityGroup)}
+	if len(s.SecurityGroups) > 0 {
+		securityGroups = make([]*string, len(s.SecurityGroups))
+		for i := range s.SecurityGroups {
+			securityGroups[i] = aws.String(s.SecurityGroups[i])
+		}
+	}
 	if s.OnDemand {
 		run = func() ([]string, error) {
-			securityGroups := []*string{aws.String(s.SecurityGroup)}
-			if len(s.SecurityGroups) > 0 {
-				securityGroups = make([]*string, len(s.SecurityGroups))
-				for i := range s.SecurityGroups {
-					securityGroups[i] = aws.String(s.SecurityGroups[i])
-				}
-			}
 			resv, err := s.ec2.RunInstances(&ec2.RunInstancesInput{
 				SubnetId:              aws.String(s.Subnet),
 				ImageId:               aws.String(s.AMI),
@@ -425,7 +425,6 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				SecurityGroupIds: securityGroups,
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "XXX: %v\n", err)
 				return nil, err
 			}
 			if len(resv.Instances) == 0 {
@@ -446,6 +445,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[*s.AWSConfig.Region])),
 				InstanceCount: aws.Int64(int64(count)),
 				LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
+					SubnetId:            aws.String(s.Subnet),
 					ImageId:             aws.String(s.AMI),
 					EbsOptimized:        aws.Bool(s.config.EBSOptimized),
 					InstanceType:        aws.String(s.config.Name),
@@ -454,11 +454,10 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 					IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
 						Arn: aws.String(s.InstanceProfile),
 					},
-					SecurityGroupIds: []*string{aws.String(s.SecurityGroup)},
+					SecurityGroupIds: securityGroups,
 				},
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "YYY: %v\n", err)
 				return nil, err
 			}
 			if len(resp.SpotInstanceRequests) == 0 {
