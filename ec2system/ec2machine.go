@@ -195,8 +195,10 @@ type System struct {
 	// one exists.
 	SshKeys []string
 
-	// The set keys available to this user in ec2.
-	ec2Keys []string
+	// The EC2 key pair name to associate with the created instances when
+	// the instance this launched. This key name will appear in the EC2
+	// instance's metadata.
+	EC2KeyName string
 
 	// The user running the application. For tagging.
 	Username string
@@ -317,7 +319,6 @@ func (s *System) Init(b *bigmachine.B) error {
 	if err != nil {
 		return err
 	}
-	s.ec2Keys, err = s.getEC2Keys()
 	return err
 }
 
@@ -343,18 +344,6 @@ func readSshAgentKeys() []string {
 		keyStrings = append(keyStrings, string(ssh.MarshalAuthorizedKey(key)))
 	}
 	return keyStrings
-}
-
-func (s *System) getEC2Keys() ([]string, error) {
-	out, err := s.ec2.DescribeKeyPairs(&ec2.DescribeKeyPairsInput{})
-	if err != nil {
-		return nil, err
-	}
-	k := make([]string, len(out.KeyPairs))
-	for i, v := range out.KeyPairs {
-		k[i] = aws.StringValue(v.KeyName)
-	}
-	return k, nil
 }
 
 // Start launches a new machine on the EC2 spot market. Start fails
@@ -429,20 +418,9 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		}
 	}
 
-	// find an ssh key that's know to AWS to ensure that one is available
-	// via instance metadata.
-	var sshKeyName string
-	for _, key := range s.SshKeys {
-		for _, ec2key := range s.ec2Keys {
-			if key == ec2key {
-				sshKeyName = key
-				log.Printf("using ssh key %v for the instance", sshKeyName)
-				break
-			}
-		}
-	}
-	if len(sshKeyName) == 0 {
-		log.Printf("none of the specified ssh keys are known to AWS")
+	var ec2KeyName *string
+	if len(s.EC2KeyName) > 0 {
+		ec2KeyName = aws.String(s.EC2KeyName)
 	}
 
 	if s.OnDemand {
@@ -466,7 +444,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				},
 				UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
 				SecurityGroupIds: securityGroups,
-				KeyName:          aws.String(sshKeyName),
+				KeyName:          ec2KeyName,
 			})
 			if err != nil {
 				return nil, err
@@ -499,7 +477,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 						Arn: aws.String(s.InstanceProfile),
 					},
 					SecurityGroupIds: securityGroups,
-					KeyName:          aws.String(sshKeyName),
+					KeyName:          ec2KeyName,
 				},
 			})
 			if err != nil {
