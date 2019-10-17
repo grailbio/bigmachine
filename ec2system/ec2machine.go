@@ -93,6 +93,13 @@ var (
 
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
 
+// SetMortality conrols the mortality of EC2 instances for help with debugging
+// low level boot time issues. It is equivalent to the 'ec2machineimmportal' flag
+// for configurations where flags cannot be used.
+func SetMortality(v bool) {
+	*immortal = v
+}
+
 var (
 	// InstanceTypes stores metadata for each known EC2 instance type.
 	// TODO(marius): generate this from the the EC2 inventory JSON instead.
@@ -187,6 +194,11 @@ type System struct {
 	// keys available in the SSH agent reachable by $SSH_AUTH_SOCK, if
 	// one exists.
 	SshKeys []string
+
+	// The EC2 key pair name to associate with the created instances when
+	// the instance this launched. This key name will appear in the EC2
+	// instance's metadata.
+	EC2KeyName string
 
 	// The user running the application. For tagging.
 	Username string
@@ -304,6 +316,9 @@ func (s *System) Init(b *bigmachine.B) error {
 		return err
 	}
 	s.authorityContents, err = ioutil.ReadFile(authorityPath)
+	if err != nil {
+		return err
+	}
 	return err
 }
 
@@ -402,6 +417,12 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			securityGroups[i] = aws.String(s.SecurityGroups[i])
 		}
 	}
+
+	var ec2KeyName *string
+	if len(s.EC2KeyName) > 0 {
+		ec2KeyName = aws.String(s.EC2KeyName)
+	}
+
 	if s.OnDemand {
 		run = func() ([]string, error) {
 			resv, err := s.ec2.RunInstances(&ec2.RunInstancesInput{
@@ -423,6 +444,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				},
 				UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
 				SecurityGroupIds: securityGroups,
+				KeyName:          ec2KeyName,
 			})
 			if err != nil {
 				return nil, err
@@ -455,6 +477,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 						Arn: aws.String(s.InstanceProfile),
 					},
 					SecurityGroupIds: securityGroups,
+					KeyName:          ec2KeyName,
 				},
 			})
 			if err != nil {
