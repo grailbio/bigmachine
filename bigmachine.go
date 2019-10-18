@@ -7,10 +7,12 @@ package bigmachine
 import (
 	"context"
 	"expvar"
+	"fmt"
 	"html/template"
 	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	// Sha256 is imported because we use its implementation for
@@ -19,6 +21,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/grailbio/base/diagnostic/dump"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/rpc"
@@ -32,6 +35,13 @@ const RpcPrefix = "/bigrpc/"
 // of testing situations, there is exactly one per process.
 type B struct {
 	system System
+	// index is a process-unique identifier for this B. It is useful for
+	// distinguishing logs or diagnostic information.
+	index int32
+	// name is a human-usable name for this B that can be provided by clients.
+	// Like index, it is useful for distinguishing logs or diagnostic
+	// information, but may be set to something contextually meaningful.
+	name string
 
 	server *rpc.Server
 	client *rpc.Client
@@ -41,6 +51,20 @@ type B struct {
 	driver   bool
 	running  bool
 }
+
+// Option is an option that can be provided when starting a new B. It is a
+// function that can modify the b that will be returned by Start.
+type Option func(b *B)
+
+// Name is an option that will name the B. See B.name.
+func Name(name string) Option {
+	return func(b *B) {
+		b.name = name
+	}
+}
+
+// nextBIndex is the index of the next B that is started.
+var nextBIndex int32
 
 // Start is the main entry point of bigmachine. Start starts a new B
 // using the provided system, returning the instance. B's shutdown
@@ -54,10 +78,14 @@ type B struct {
 //
 //		// bigmachine driver code
 //	}
-func Start(system System) *B {
+func Start(system System, opts ...Option) *B {
 	b := &B{
+		index:    atomic.AddInt32(&nextBIndex, 1) - 1,
 		system:   system,
 		machines: make(map[string]*Machine),
+	}
+	for _, opt := range opts {
+		opt(b)
 	}
 	b.run()
 	// Test systems run in a single process space and thus
@@ -66,6 +94,19 @@ func Start(system System) *B {
 	// TODO(marius): allow multiple sessions to share a single expvar
 	if system.Name() != "testsystem" && expvar.Get("machines") == nil {
 		expvar.Publish("machines", &machineVars{b})
+	}
+
+	if system.Name() != "testsystem" {
+		pfx := fmt.Sprintf("bigmachine-%02d-", b.index)
+		if b.name != "" {
+			pfx += fmt.Sprintf("%s-", b.name)
+		}
+		dump.Register(pfx+"status", makeStatusDumpFunc(b))
+		dump.Register(pfx+"pprof-goroutine", makeProfileDumpFunc(b, "goroutine", 2))
+		// TODO(jcharumilind): Should the heap profile do a gc?
+		dump.Register(pfx+"pprof-heap", makeProfileDumpFunc(b, "heap", 0))
+		dump.Register(pfx+"pprof-mutex", makeProfileDumpFunc(b, "mutex", 1))
+		dump.Register(pfx+"pprof-profile", makeProfileDumpFunc(b, "profile", 0))
 	}
 	return b
 }
@@ -219,8 +260,7 @@ func (b *B) Machines() []*Machine {
 	return snapshot
 }
 
-// HandleDebug registers diagnostic http endpoints on the provided
-// ServeMux.
+// HandleDebug registers diagnostic http endpoints on the provided ServeMux.
 func (b *B) HandleDebug(mux *http.ServeMux) {
 	b.HandleDebugPrefix("/debug/bigmachine/", mux)
 }
@@ -228,8 +268,6 @@ func (b *B) HandleDebug(mux *http.ServeMux) {
 // HandleDebugPrefix registers diagnostic http endpoints on the provided
 // ServeMux under the provided prefix.
 func (b *B) HandleDebugPrefix(prefix string, mux *http.ServeMux) {
-	mux.Handle(prefix+"pprof/profile", &profileHandler{b, "profile"})
-	mux.Handle(prefix+"pprof/heap", &profileHandler{b, "heap"})
 	mux.HandleFunc(prefix+"pprof/", b.pprofIndex)
 	mux.Handle(prefix+"status", &statusHandler{b})
 }
