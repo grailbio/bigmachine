@@ -611,8 +611,9 @@ func getAddress(instance *ec2.Instance) string {
 	for _, ptr := range []*string{
 		instance.PublicDnsName,
 		instance.PublicIpAddress,
-		instance.PrivateDnsName,
 		instance.PrivateIpAddress,
+		// NOTE: do not return a private DNS name since in it is not guaranteed to
+		//       be resolvable externally.
 	} {
 		if val := aws.StringValue(ptr); len(val) > 0 {
 			return val
