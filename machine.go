@@ -318,35 +318,49 @@ func (m *Machine) setState(s State) {
 
 func (m *Machine) loop(ctx context.Context, system System) {
 	m.setState(Starting)
-	if m.owner && !m.NoExec {
-		// If we're the owner, loop is called after the machine was started
-		// by the underlying system. We first wait for the machine to come
-		// up (we give it 2 minutes).
-		if err := m.ping(ctx); err != nil {
-			m.setError(err)
-			return
-		}
-		// Give us some extra time now. This keepalive will die anyway
-		// after we exec.
-		keepaliveCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		if err := m.call(keepaliveCtx, "Supervisor.Keepalive", 10*time.Minute, nil); err != nil {
-			log.Error.Printf("Keepalive %v: %v", m.Addr, err)
-		}
-		cancel()
-		// Exec the current binary onto the machine. This will make the
-		// machine unresponsive, because it will not have a chance to reply
-		// to the exec call. We give it some time to recover.
-		err := m.exec(ctx)
 
-		// We expect an error since the process is execed before it has a chance
-		// to reply. We check at least that the error comes from the right place
-		// in the stack; other errors (e.g., context cancellations) result in a startup
-		// failure.
-		if err != nil && !errors.Is(errors.Net, err) {
-			m.setError(err)
-			return
+	if m.owner {
+		if system != nil {
+			go func() {
+				r, err := system.Tail(ctx, m)
+				if err == nil {
+					_, err = io.Copy(iofmt.PrefixWriter(os.Stderr, m.Addr+": "), r)
+				}
+				if err != nil && err != context.Canceled {
+					log.Error.Printf("%s: tail: %s", m.Addr, err)
+				}
+			}()
+		}
+		if !m.NoExec {
+			// If we're the owner, loop is called after the machine was started
+			// by the underlying system. We first wait for the machine to come
+			// up (we give it 2 minutes).
+			if err := m.ping(ctx); err != nil {
+				m.setError(err)
+				return
+			}
+			// Give us some extra time now. This keepalive will die anyway
+			// after we exec.
+			keepaliveCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			if err := m.call(keepaliveCtx, "Supervisor.Keepalive", 10*time.Minute, nil); err != nil {
+				log.Error.Printf("Keepalive %v: %v", m.Addr, err)
+			}
+			cancel()
+			// Exec the current binary onto the machine. This will make the
+			// machine unresponsive, because it will not have a chance to reply
+			// to the exec call. We give it some time to recover.
+			err := m.exec(ctx)
+			// We expect an error since the process is execed before it has a chance
+			// to reply. We check at least that the error comes from the right place
+			// in the stack; other errors (e.g., context cancellations) result in a startup
+			// failure.
+			if err != nil && !errors.Is(errors.Net, err) {
+				m.setError(err)
+				return
+			}
 		}
 	}
+
 	if err := m.ping(ctx); err != nil {
 		m.setError(err)
 		return
@@ -383,16 +397,6 @@ func (m *Machine) loop(ctx context.Context, system System) {
 	}
 
 	if system != nil {
-		go func() {
-			r, err := system.Tail(ctx, m)
-			if err == nil {
-				_, err = io.Copy(iofmt.PrefixWriter(os.Stderr, m.Addr+": "), r)
-			}
-			if err != nil && err != context.Canceled {
-				log.Error.Printf("%s: tail: %s", m.Addr, err)
-			}
-		}()
-
 		// Note that this means that OOMs are detected only by the owner
 		// process. This is probably ok in most cases, but we should also
 		// consider adding a system status propagation mechanism, so that
