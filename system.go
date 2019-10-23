@@ -71,7 +71,7 @@ var (
 // system implementation. RegisterSystem registers the implementation
 // with gob, so that instances can be transmitted over the wire. It
 // also registers the provided System instance as a default to use
-// for the name to support bigmachine.Bootstrap.
+// for the name to support bigmachine.Init.
 func RegisterSystem(name string, system System) {
 	gob.Register(system)
 	systemsMu.Lock()
@@ -80,14 +80,11 @@ func RegisterSystem(name string, system System) {
 	systems[name] = system
 }
 
-// Bootstrap provides an alternative path to bootstrap a bigmachine
-// node. If a binary follows a non-deterministic path to
-// bigmachine.Start, or wishes to forego needless initialization, it
-// may call Bootstrap. Bootstrap is a no-op if the binary is not
-// running as a bigmachine worker; if it is, Bootstrap never returns.
-//
-// This is an experimental API.
-func Bootstrap() {
+// Init initializes bigmachine. It should be called after flag
+// parsing and global setup in bigmachine-based processes. Init is a
+// no-op if the binary is not running as a bigmachine worker; if it
+// is, Init never returns.
+func Init() {
 	name := os.Getenv("BIGMACHINE_SYSTEM")
 	if name == "" {
 		return
