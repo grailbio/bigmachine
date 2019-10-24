@@ -245,7 +245,7 @@ func (s *System) Init(b *bigmachine.B) error {
 		// TODO(marius): don't hardcode this as being linux/amd64
 		rc, err := self.Open("linux", "amd64")
 		if err == fatbin.ErrNoSuchImage {
-			return errors.E(errors.Precondition, "binary has no linux/amd64 image; consider compiling with fatgo or run on linux/amd64")
+			return errors.E(errors.Precondition, "binary has no linux/amd64 image; consider compiling with gofat or run on linux/amd64")
 		} else if err != nil {
 			return err
 		}
