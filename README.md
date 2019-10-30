@@ -26,6 +26,7 @@ other systems may be implemented with a [relatively compact Go interface](https:
 - API documentation: [godoc.org/github.com/grailbio/bigmachine](https://godoc.org/github.com/grailbio/bigmachine)
 - Issue tracker: [github.com/grailbio/bigmachine/issues](https://github.com/grailbio/bigmachine/issues)
 - Travis CI: [![Travis CI](https://travis-ci.org/grailbio/bigmachine.svg) https://travis-ci.org/grailbio/bigmachine](https://travis-ci.org/grailbio/bigmachine)
+- Implementation notes: [github.com/grailbio/bigmachine/blob/master/docs/impl.md](https://github.com/grailbio/bigmachine/blob/master/docs/impl.md)
 
 Help wanted!
 - [GCP compute engine backend](https://github.com/grailbio/bigmachine/issues/1)
