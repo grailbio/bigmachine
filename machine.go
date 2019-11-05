@@ -608,9 +608,9 @@ func (m *Machine) Call(ctx context.Context, serviceMethod string, arg, reply int
 			fallthrough
 		case Stopped:
 			if err := m.Err(); err != nil {
-				return errors.E(errors.Unavailable, err)
+				return errors.E(errors.Fatal, errors.Unavailable, err)
 			}
-			return errors.E(errors.Unavailable, fmt.Sprintf("machine %s stopped", m.Addr))
+			return errors.E(errors.Fatal, errors.Unavailable, fmt.Sprintf("machine %s stopped", m.Addr))
 		default:
 			select {
 			case <-ctx.Done():
@@ -628,7 +628,7 @@ func (m *Machine) RetryCall(ctx context.Context, serviceMethod string, arg, repl
 			return err
 		}
 		if err := retry.Wait(ctx, retryPolicy, retries); err != nil {
-			return err
+			return errors.E(errors.Fatal, err)
 		}
 	}
 }
