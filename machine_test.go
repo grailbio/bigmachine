@@ -7,7 +7,6 @@ package bigmachine
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"io/ioutil"
 	"log"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/grailbio/bigmachine/rpc"
+	"github.com/grailbio/base/errors"
 )
 
 var fakeDigest = digester.FromString("fake binary")
@@ -28,6 +28,7 @@ type fakeSupervisor struct {
 	Image         []byte
 	LastKeepalive time.Time
 	Hung          bool
+	Execd         bool
 }
 
 func (s *fakeSupervisor) Setenv(ctx context.Context, env []string, _ *struct{}) error {
@@ -40,10 +41,22 @@ func (s *fakeSupervisor) Setargs(ctx context.Context, args []string, _ *struct{}
 	return nil
 }
 
-func (s *fakeSupervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) error {
-	var err error
-	s.Image, err = ioutil.ReadAll(exec)
+func (s *fakeSupervisor) Setbinary(ctx context.Context, binary io.Reader, _ *struct{}) (err error) {
+	s.Image, err = ioutil.ReadAll(binary)
 	return err
+}
+
+func (s *fakeSupervisor) Getbinary(ctx context.Context, _ struct{}, rc *io.ReadCloser) error {
+	if s.Image == nil {
+		return errors.E(errors.Invalid, "no binary set")
+	}
+	*rc = ioutil.NopCloser(bytes.NewReader(s.Image))
+	return nil
+}
+
+func (s *fakeSupervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) error {
+	s.Execd = true
+	return nil
 }
 
 func (s *fakeSupervisor) Tail(ctx context.Context, fd int, rc *io.ReadCloser) error {

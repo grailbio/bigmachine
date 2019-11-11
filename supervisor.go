@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/grailbio/base/digest"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/rpc"
 	"github.com/shirou/gopsutil/disk"
@@ -53,10 +54,15 @@ func binary() (io.ReadCloser, error) {
 type Supervisor struct {
 	b       *B
 	system  System
-	environ []string
 	server  *rpc.Server
 	nextc   chan time.Time
 	healthy uint32
+
+	mu sync.Mutex
+	// binaryPath contains the path of the last
+	// binary uploaded in preparation for Exec.
+	binaryPath string
+	environ    []string
 }
 
 // StartSupervisor starts a new supervisor based on the provided arguments.
@@ -133,30 +139,65 @@ func (s *Supervisor) Setargs(ctx context.Context, args []string, _ *struct{}) er
 // is appended to the default process environment: keys provided here
 // override those that already exist in the environment.
 func (s *Supervisor) Setenv(ctx context.Context, env []string, _ *struct{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.environ = env
 	return nil
+}
+
+// Setbinary uploads a new binary to replace the current binary when
+// Supervisor.Exec is called. The two calls are separated so that
+// different timeouts can be applied to upload and exec.
+func (s *Supervisor) Setbinary(ctx context.Context, binary io.Reader, _ *struct{}) error {
+	f, err := ioutil.TempFile("", "")
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, binary); err != nil {
+		return err
+	}
+	path := f.Name()
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return err
+	}
+	if err := os.Chmod(path, 0755); err != nil {
+		os.Remove(path)
+		return err
+	}
+	s.mu.Lock()
+	s.binaryPath = path
+	s.mu.Unlock()
+	return nil
+}
+
+// Getbinary retrieves the last binary uploaded via Setbinary.
+func (s *Supervisor) Getbinary(ctx context.Context, _ struct{}, rc *io.ReadCloser) error {
+	s.mu.Lock()
+	path := s.binaryPath
+	s.mu.Unlock()
+	if path == "" {
+		return errors.E(errors.Invalid, "Supervisor.Getbinary: no binary set")
+	}
+	f, err := os.Open(path)
+	*rc = f
+	return err
 }
 
 // Exec reads a new image from its argument and replaces the current
 // process with it. As a consequence, the currently running machine will
 // die. It is up to the caller to manage this interaction.
-func (s *Supervisor) Exec(ctx context.Context, exec io.Reader, _ *struct{}) error {
-	f, err := ioutil.TempFile("", "")
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(f, exec); err != nil {
-		return err
-	}
-	path := f.Name()
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(path, 0755); err != nil {
-		return err
+func (s *Supervisor) Exec(ctx context.Context, _ struct{}, _ *struct{}) error {
+	s.mu.Lock()
+	var (
+		environ = append(os.Environ(), s.environ...)
+		path    = s.binaryPath
+	)
+	s.mu.Unlock()
+	if path == "" {
+		return errors.E(errors.Invalid, "Supervisor.Exec: no binary set")
 	}
 	log.Printf("exec %s %s", path, strings.Join(os.Args, " "))
-	environ := append(os.Environ(), s.environ...)
 	return syscall.Exec(path, os.Args, environ)
 }
 
