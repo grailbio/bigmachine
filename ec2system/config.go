@@ -11,6 +11,15 @@ import (
 	"github.com/grailbio/base/config"
 )
 
+// Defaults for the ec2boot binary. These are used when the "binary" value is empty.
+// For backwards compatiblity (old configs), any binary with the prefix
+// defaultEc2BootPrefix are rewritten to the current version.
+const (
+	defaultEc2BootPrefix  = "https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot"
+	defaultEc2BootVersion = "0.4"
+	defaultEc2Boot        = defaultEc2BootPrefix + defaultEc2BootVersion
+)
+
 func init() {
 	config.Register("bigmachine/ec2system", func(constr *config.Constructor) {
 		var system System
@@ -26,7 +35,7 @@ func init() {
 		diskspace := constr.Int("diskspace", 200, "the amount of (root) disk space to allocate")
 		dataspace := constr.Int("dataspace", 0, "the amount of scratch/data space to allocate")
 		constr.StringVar(&system.Binary, "binary",
-			"https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.3",
+			"",
 			"the bootstrap bigmachine binary with which machines are launched")
 		sshkeys := constr.String("sshkey", "", "comma-separated list of ssh keys to be installed")
 		constr.StringVar(&system.Username, "username", "", "user name for tagging purposes")
