@@ -171,13 +171,13 @@ func (s *Supervisor) Setbinary(ctx context.Context, binary io.Reader, _ *struct{
 	return nil
 }
 
-// Getbinary retrieves the last binary uploaded via Setbinary.
-func (s *Supervisor) Getbinary(ctx context.Context, _ struct{}, rc *io.ReadCloser) error {
+// GetBinary retrieves the last binary uploaded via Setbinary.
+func (s *Supervisor) GetBinary(ctx context.Context, _ struct{}, rc *io.ReadCloser) error {
 	s.mu.Lock()
 	path := s.binaryPath
 	s.mu.Unlock()
 	if path == "" {
-		return errors.E(errors.Invalid, "Supervisor.Getbinary: no binary set")
+		return errors.E(errors.Invalid, "Supervisor.GetBinary: no binary set")
 	}
 	f, err := os.Open(path)
 	*rc = f

@@ -521,7 +521,8 @@ func (m *Machine) exec(ctx context.Context) error {
 	// at a minimum 100 kB/s upload bandwidth.
 	//
 	// TODO(marius): this needs to be improved. We should probably
-	// base this on measuring progress instead (e.g., by rating the )
+	// base this on measuring progress instead (e.g., by wrapping
+	// the reader).
 	const timeout = 10 * time.Second
 	var info Info
 	if err := m.timeoutCall(ctx, timeout, "Supervisor.Info", struct{}{}, &info); err != nil {
@@ -538,7 +539,7 @@ func (m *Machine) exec(ctx context.Context) error {
 		return err
 	}
 	const floor = 100 << 10 // bps
-	uploadTimeout := time.Duration(binInfo.Size/floor) * time.Second
+	uploadTimeout := time.Duration((binInfo.Size+floor-1)/floor) * time.Second
 	log.Debug.Printf("exec: upload timeout: %v", uploadTimeout)
 	if err := m.timeoutCall(ctx, timeout, "Supervisor.Keepalive", uploadTimeout, nil); err != nil {
 		log.Error.Printf("Keepalive %v: %v", m.Addr, err)
