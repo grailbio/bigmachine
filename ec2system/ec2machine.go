@@ -180,9 +180,8 @@ type System struct {
 	// Binary is the URL to a bootstrap binary to be used when launching
 	// system instances. It should be a minimal bigmachine build that
 	// contains the ec2machine implementation and runs bigmachine's
-	// supervisor service. By default the following binary is used:
-	//
-	//	https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.4
+	// supervisor service. If the value of Binary is empty, then the
+	// default ec2boot binary is used.
 	//
 	// The binary is fetched by a vanilla curl(1) invocation, and thus needs
 	// to be publicly available.
@@ -268,7 +267,10 @@ func (s *System) Init(b *bigmachine.B) error {
 		s.Diskspace = 200
 	}
 	if s.Binary == "" {
-		s.Binary = "https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot0.4"
+		s.Binary = defaultEc2Boot
+	} else if s.Binary != defaultEc2Boot && strings.HasPrefix(s.Binary, defaultEc2BootPrefix) {
+		log.Print("ec2boot: using current binary: ", defaultEc2Boot)
+		s.Binary = defaultEc2Boot
 	}
 	var ok bool
 	s.config, ok = instanceTypes[s.InstanceType]
