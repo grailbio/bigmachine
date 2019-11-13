@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grailbio/bigmachine/rpc"
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/bigmachine/rpc"
 )
 
 var fakeDigest = digester.FromString("fake binary")
@@ -46,7 +46,7 @@ func (s *fakeSupervisor) Setbinary(ctx context.Context, binary io.Reader, _ *str
 	return err
 }
 
-func (s *fakeSupervisor) Getbinary(ctx context.Context, _ struct{}, rc *io.ReadCloser) error {
+func (s *fakeSupervisor) GetBinary(ctx context.Context, _ struct{}, rc *io.ReadCloser) error {
 	if s.Image == nil {
 		return errors.E(errors.Invalid, "no binary set")
 	}
