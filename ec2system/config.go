@@ -12,7 +12,7 @@ import (
 )
 
 // Defaults for the ec2boot binary. These are used when the "binary" value is empty.
-// For backwards compatiblity (old configs), any binary with the prefix
+// For backwards compatibility (old configs), any binary with the prefix
 // defaultEc2BootPrefix are rewritten to the current version.
 const (
 	defaultEc2BootPrefix  = "https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot"
