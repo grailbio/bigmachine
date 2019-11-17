@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xl="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" version="1.1" viewBox="124 217.5 834.0838 487.5" width="834.0838" height="487.5">
+  <defs>
+    <font-face font-family="Go" font-size="25" panose-1="2 11 6 0 0 0 0 0 0 0" units-per-em="1000" underline-position="-61.035156" underline-thickness="24.414062" slope="0" x-height="530.27344" cap-height="722.65625" ascent="944.8242" descent="-210.9375" font-weight="400">
+      <font-face-src>
+        <font-face-name name="GoRegular"/>
+      </font-face-src>
+    </font-face>
+    <marker orient="auto" overflow="visible" markerUnits="strokeWidth" id="FilledArrow_Marker" stroke-linejoin="miter" stroke-miterlimit="10" viewBox="-1 -3 6 6" markerWidth="6" markerHeight="6" color="black">
+      <g>
+        <path d="M 3.7333333 0 L 0 -1.4 L 0 1.4 Z" fill="currentColor" stroke="currentColor" stroke-width="1"/>
+      </g>
+    </marker>
+    <font-face font-family="Go" font-size="16" panose-1="2 11 6 0 0 0 0 0 0 0" units-per-em="1000" underline-position="-61.035156" underline-thickness="24.414062" slope="0" x-height="530.27344" cap-height="722.65625" ascent="944.8242" descent="-210.9375" font-weight="400">
+      <font-face-src>
+        <font-face-name name="GoRegular"/>
+      </font-face-src>
+    </font-face>
+    <marker orient="auto" overflow="visible" markerUnits="strokeWidth" id="FilledArrow_Marker_2" stroke-linejoin="miter" stroke-miterlimit="10" viewBox="-5 -3 6 6" markerWidth="6" markerHeight="6" color="black">
+      <g>
+        <path d="M -3.7333333 0 L 0 1.4 L 0 -1.4 Z" fill="currentColor" stroke="currentColor" stroke-width="1"/>
+      </g>
+    </marker>
+  </defs>
+  <metadata> Produced by OmniGraffle 7.12 
+    <dc:date>2019-10-30 21:10:33 +0000</dc:date>
+  </metadata>
+  <g id="Canvas_1" fill-opacity="1" stroke-dasharray="none" stroke-opacity="1" fill="none" stroke="none">
+    <title>Canvas 1</title>
+    <g id="Canvas_1: Layer 1">
+      <title>Layer 1</title>
+      <g id="Graphic_2">
+        <text transform="translate(129 222.5)" fill="black">
+          <tspan font-family="Go" font-size="25" font-weight="400" fill="black" x="0" y="24">Bigmachine bootstrap process</tspan>
+        </text>
+      </g>
+      <g id="Graphic_3">
+        <rect x="148.5" y="367.75" width="201.5" height="135.5" fill="white"/>
+        <rect x="148.5" y="367.75" width="201.5" height="135.5" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+        <text transform="translate(153.5 406.5)" fill="black">
+          <tspan font-family="Go" font-size="25" font-weight="400" fill="black" x="62.113525" y="24">Driver</tspan>
+          <tspan font-family="Go" font-size="25" font-weight="400" fill="black" x="20.73169" y="53">(Go program)</tspan>
+        </text>
+      </g>
+      <g id="Graphic_17">
+        <rect x="630" y="512.5" width="153" height="153" id="path"/>
+        <clipPath id="clip_path">
+          <use xl:href="#path"/>
+        </clipPath>
+        <g clip-path="url(#clip_path)">
+          <image xl:href="image1.png" width="384" height="384" transform="translate(630 512.5) scale(.3984375)"/>
+        </g>
+      </g>
+      <g id="Graphic_16">
+        <title>Cloud Queue</title>
+        <path d="M 769.5875 270.16125 C 763.7508 240.08156 737.7433 217.5 706.5 217.5 C 681.6942 217.5 660.15 231.79875 649.4208 252.72375 C 623.585 255.51375 603.5 277.74656 603.5 304.6875 C 603.5 333.54656 626.5892 357 655 357 L 766.5833 357 C 790.2733 357 809.5 337.47 809.5 313.40625 C 809.5 290.38875 791.9042 271.73062 769.5875 270.16125 Z M 766.5833 339.5625 L 655 339.5625 C 636.0308 339.5625 620.6667 323.95594 620.6667 304.6875 C 620.6667 285.41906 636.0308 269.8125 655 269.8125 L 661.0942 269.8125 C 666.7592 249.6722 684.87 234.9375 706.5 234.9375 C 732.5933 234.9375 753.7083 256.38562 753.7083 282.89062 L 753.7083 287.25 L 766.5833 287.25 C 780.8317 287.25 792.3333 298.93312 792.3333 313.40625 C 792.3333 327.87937 780.8317 339.5625 766.5833 339.5625 Z" fill="black"/>
+      </g>
+      <g id="Graphic_18">
+        <text transform="translate(624.3345 372.75)" fill="black">
+          <tspan font-family="Go" font-size="25" font-weight="400" fill="black" x="0" y="24">Cloud provider</tspan>
+        </text>
+      </g>
+      <g id="Graphic_20">
+        <text transform="translate(669.6836 671)" fill="black">
+          <tspan font-family="Go" font-size="25" font-weight="400" fill="black" x="0" y="24">Server</tspan>
+        </text>
+      </g>
+      <g id="Line_21">
+        <line x1="350" y1="389.10653" x2="598.55764" y2="274.65043" marker-end="url(#FilledArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_22">
+        <clipPath id="clip_path_2">
+          <path d="M .8899442 32.060338 L 134.56266 -29.493423 L 146.27412 -4.060338 L 12.601399 57.49342 Z"/>
+        </clipPath>
+        <text clip-path="url(#clip_path_2)" transform="translate(395.92054 343.2518) rotate(-24.725177)" fill="black">
+          <tspan font-family="Go" font-size="16" font-weight="400" fill="black" x="0" y="15">1. request machine</tspan>
+        </text>
+      </g>
+      <g id="Line_23">
+        <line x1="611" y1="333" x2="365.6702" y2="429.66436" marker-end="url(#FilledArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_24">
+        <clipPath id="clip_path_3">
+          <path d="M 1.1173508 33.88376 L 168.16113 -31.934498 L 178.4256 -5.8837616 L 11.38181 59.9345 Z"/>
+        </clipPath>
+        <text clip-path="url(#clip_path_3)" transform="translate(407.49054 389.06303) rotate(-21.505334)" fill="black">
+          <tspan font-family="Go" font-size="16" font-weight="400" fill="black" x="10.123032" y="15">3. machine allocated</tspan>
+        </text>
+      </g>
+      <g id="Line_28">
+        <line x1="706.5" y1="496.6" x2="706.5" y2="422.65" marker-end="url(#FilledArrow_Marker)" marker-start="url(#FilledArrow_Marker_2)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_29">
+        <clipPath id="clip_path_4">
+          <rect x="0" y="0" width="192.08379" height="28"/>
+        </clipPath>
+        <text clip-path="url(#clip_path_4)" transform="translate(691 450.625)" fill="black">
+          <tspan font-family="Go" font-size="16" font-weight="400" fill="black" x="20.842674" y="15">2. allocate machine</tspan>
+        </text>
+      </g>
+      <g id="Line_31">
+        <line x1="350" y1="469.32203" x2="614.9267" y2="558.2586" marker-end="url(#FilledArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_32">
+        <clipPath id="clip_path_5">
+          <path d="M 8.281205 -22.689473 L 147.79382 24.145268 L 138.88286 50.689473 L -.62975256 3.854732 Z"/>
+        </clipPath>
+        <text clip-path="url(#clip_path_5)" transform="translate(417.33103 468.25034) rotate(18.557034)" fill="black">
+          <tspan font-family="Go" font-size="16" font-weight="400" fill="black" x="19.957031" y="15">4. upload self</tspan>
+        </text>
+      </g>
+      <g id="Graphic_33">
+        <clipPath id="clip_path_6">
+          <rect x="0" y="0" width="192.08379" height="28"/>
+        </clipPath>
+        <text clip-path="url(#clip_path_6)" transform="translate(771 575.5)" fill="black">
+          <tspan font-family="Go" font-size="16" font-weight="400" fill="black" x="25.698143" y="15">5. exec self binary</tspan>
+        </text>
+      </g>
+      <g id="Line_36">
+        <line x1="350" y1="493.0525" x2="616.1938" y2="645.11334" marker-end="url(#FilledArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </g>
+      <g id="Graphic_37">
+        <clipPath id="clip_path_7">
+          <path d="M 20.507956 -49.24605 L 199.3805 52.933276 L 185.49204 77.24605 L 6.619504 -24.933276 Z"/>
+        </clipPath>
+        <text clip-path="url(#clip_path_7)" transform="translate(443.85354 520.81773) rotate(29.736778)" fill="black">
+          <tspan font-family="Go" font-size="16" font-weight="400" fill="black" x="17.546875" y="15">6. maintain keepalives</tspan>
+        </text>
+      </g>
+    </g>
+  </g>
+</svg>

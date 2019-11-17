@@ -318,35 +318,43 @@ func (m *Machine) setState(s State) {
 
 func (m *Machine) loop(ctx context.Context, system System) {
 	m.setState(Starting)
-	if m.owner && !m.NoExec {
-		// If we're the owner, loop is called after the machine was started
-		// by the underlying system. We first wait for the machine to come
-		// up (we give it 2 minutes).
-		if err := m.ping(ctx); err != nil {
-			m.setError(err)
-			return
-		}
-		// Give us some extra time now. This keepalive will die anyway
-		// after we exec.
-		keepaliveCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		if err := m.call(keepaliveCtx, "Supervisor.Keepalive", 10*time.Minute, nil); err != nil {
-			log.Error.Printf("Keepalive %v: %v", m.Addr, err)
-		}
-		cancel()
-		// Exec the current binary onto the machine. This will make the
-		// machine unresponsive, because it will not have a chance to reply
-		// to the exec call. We give it some time to recover.
-		err := m.exec(ctx)
 
-		// We expect an error since the process is execed before it has a chance
-		// to reply. We check at least that the error comes from the right place
-		// in the stack; other errors (e.g., context cancellations) result in a startup
-		// failure.
-		if err != nil && !errors.Is(errors.Net, err) {
-			m.setError(err)
-			return
+	if m.owner {
+		if system != nil {
+			go func() {
+				r, err := system.Tail(ctx, m)
+				if err == nil {
+					_, err = io.Copy(iofmt.PrefixWriter(os.Stderr, m.Addr+": "), r)
+				}
+				if err != nil && err != context.Canceled {
+					log.Error.Printf("%s: tail: %s", m.Addr, err)
+				}
+			}()
+		}
+		if !m.NoExec {
+			// If we're the owner, loop is called after the machine was started
+			// by the underlying system. We first wait for the machine to come
+			// up (we give it 2 minutes).
+			if err := m.ping(ctx); err != nil {
+				m.setError(err)
+				return
+			}
+
+			// Exec the current binary onto the machine. This will make the
+			// machine unresponsive, because it will not have a chance to reply
+			// to the exec call.
+			err := m.exec(ctx)
+			// We expect an error since the process is execed before it has a chance
+			// to reply. We check at least that the error comes from the right place
+			// in the stack; other errors (e.g., context cancellations) result in a startup
+			// failure.
+			if err != nil && !errors.Is(errors.Net, err) {
+				m.setError(err)
+				return
+			}
 		}
 	}
+
 	if err := m.ping(ctx); err != nil {
 		m.setError(err)
 		return
@@ -383,16 +391,6 @@ func (m *Machine) loop(ctx context.Context, system System) {
 	}
 
 	if system != nil {
-		go func() {
-			r, err := system.Tail(ctx, m)
-			if err == nil {
-				_, err = io.Copy(iofmt.PrefixWriter(os.Stderr, m.Addr+": "), r)
-			}
-			if err != nil && err != context.Canceled {
-				log.Error.Printf("%s: tail: %s", m.Addr, err)
-			}
-		}()
-
 		// Note that this means that OOMs are detected only by the owner
 		// process. This is probably ok in most cases, but we should also
 		// consider adding a system status propagation mechanism, so that
@@ -510,30 +508,52 @@ func (m *Machine) context(ctx context.Context) (mctx context.Context, cancel fun
 	}
 }
 
+// Exec prepares the remote machine for binary replacement, and then
+// calls Supervisor.Exec.
 func (m *Machine) exec(ctx context.Context) error {
 	self, err := fatbin.Self()
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
+
+	// We first get the target GOOS/GOARCH so that we can
+	// compute the total time to allow for uploads, assuming
+	// at a minimum 100 kB/s upload bandwidth.
+	//
+	// TODO(marius): this needs to be improved. We should probably
+	// base this on measuring progress instead (e.g., by wrapping
+	// the reader).
+	const timeout = 10 * time.Second
 	var info Info
-	if err := m.call(ctx, "Supervisor.Info", struct{}{}, &info); err != nil {
+	if err := m.timeoutCall(ctx, timeout, "Supervisor.Info", struct{}{}, &info); err != nil {
 		return err
 	}
-	// First set the correct environment and arguments.
-	if err := m.call(ctx, "Supervisor.Setenv", m.environ, nil); err != nil {
+	binInfo, ok := self.Stat(info.Goos, info.Goarch)
+	if !ok {
+		return errors.E(errors.Fatal, "no image for ", info.Goos, "/", info.Goarch)
+	}
+	if err := m.timeoutCall(ctx, timeout, "Supervisor.Setenv", m.environ, nil); err != nil {
 		return err
 	}
-	if err := m.call(ctx, "Supervisor.Setargs", os.Args, nil); err != nil {
+	if err := m.timeoutCall(ctx, timeout, "Supervisor.Setargs", os.Args, nil); err != nil {
 		return err
 	}
+	const floor = 100 << 10 // bps
+	uploadTimeout := time.Duration((binInfo.Size+floor-1)/floor) * time.Second
+	log.Debug.Printf("exec: upload timeout: %v", uploadTimeout)
+	if err := m.timeoutCall(ctx, timeout, "Supervisor.Keepalive", uploadTimeout, nil); err != nil {
+		log.Error.Printf("Keepalive %v: %v", m.Addr, err)
+	}
+
 	rc, err := self.Open(info.Goos, info.Goarch)
 	if err != nil {
 		return err
 	}
 	defer rc.Close()
-	return m.call(ctx, "Supervisor.Exec", rc, nil)
+	if err := m.call(ctx, "Supervisor.Setbinary", rc, nil); err != nil {
+		return err
+	}
+	return m.timeoutCall(ctx, timeout, "Supervisor.Exec", struct{}{}, nil)
 }
 
 func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply interface{}) (err error) {
@@ -554,6 +574,13 @@ func (m *Machine) call(ctx context.Context, serviceMethod string, arg, reply int
 		}()
 	}
 	err = m.client.Call(ctx, m.Addr, serviceMethod, arg, reply)
+	return err
+}
+
+func (m *Machine) timeoutCall(ctx context.Context, timeout time.Duration, serviceMethod string, arg, reply interface{}) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	err := m.call(ctx, serviceMethod, arg, reply)
+	cancel()
 	return err
 }
 
@@ -604,9 +631,9 @@ func (m *Machine) Call(ctx context.Context, serviceMethod string, arg, reply int
 			fallthrough
 		case Stopped:
 			if err := m.Err(); err != nil {
-				return errors.E(errors.Unavailable, err)
+				return errors.E(errors.Fatal, errors.Unavailable, err)
 			}
-			return errors.E(errors.Unavailable, fmt.Sprintf("machine %s stopped", m.Addr))
+			return errors.E(errors.Fatal, errors.Unavailable, fmt.Sprintf("machine %s stopped", m.Addr))
 		default:
 			select {
 			case <-ctx.Done():
@@ -624,7 +651,7 @@ func (m *Machine) RetryCall(ctx context.Context, serviceMethod string, arg, repl
 			return err
 		}
 		if err := retry.Wait(ctx, retryPolicy, retries); err != nil {
-			return err
+			return errors.E(errors.Fatal, err)
 		}
 	}
 }
