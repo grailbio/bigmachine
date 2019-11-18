@@ -911,7 +911,8 @@ func (s *System) Tail(ctx context.Context, m *bigmachine.Machine) (io.Reader, er
 	if err != nil {
 		return nil, err
 	}
-	return s.run(ctx, u.Hostname(), "sudo journalctl --output=cat -f -u bootmachine"), nil
+	// Use -n all to catpure all prior output rather than just the last 10 lines.
+	return s.run(ctx, u.Hostname(), "sudo journalctl --output=cat -n all -f -u bootmachine"), nil
 }
 
 func (s *System) Read(ctx context.Context, m *bigmachine.Machine, filename string) (io.Reader, error) {
