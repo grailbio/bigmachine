@@ -41,6 +41,11 @@ func TestDiskConfig(t *testing.T) {
 }
 
 func TestMutualHTTPS(t *testing.T) {
+	save := useInstanceIDPrefix
+	useInstanceIDPrefix = false
+	defer func() {
+		useInstanceIDPrefix = save
+	}()
 	// This is a really nasty way of testing what's going on here,
 	// but we do want to test this property end-to-end.
 	mux := new(http.ServeMux)
@@ -69,7 +74,9 @@ func TestMutualHTTPS(t *testing.T) {
 	}
 
 	go func() {
-		sys.ListenAndServe(fmt.Sprintf(":%d", port), mux)
+		if err := sys.ListenAndServe(fmt.Sprintf(":%d", port), mux); err != nil {
+			t.Fatal(err)
+		}
 	}()
 	time.Sleep(time.Second)
 

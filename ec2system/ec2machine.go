@@ -90,6 +90,11 @@ var (
 
 	// Used to rate limit EC2 calls.
 	limiter = rate.NewLimiter(rate.Limit(1), 2)
+
+	// useInstanceIDPrefix determines whether machine addresses
+	// assigned by ec2system should include the AWS EC2 instance IDs.
+	// This is exposed as an option here for testing purposes.
+	useInstanceIDPrefix = true
 )
 
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
@@ -604,7 +609,10 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			return nil, fmt.Errorf("ec2.DescribeInstances %s[%d]: no dns name or ip addresss available", aws.StringValue(instance.InstanceId), i)
 		}
 		machines[i] = new(bigmachine.Machine)
-		machines[i].Addr = fmt.Sprintf("https://%s/%s/", addr, aws.StringValue(instance.InstanceId))
+		machines[i].Addr = fmt.Sprintf("https://%s/", addr)
+		if useInstanceIDPrefix {
+			machines[i].Addr += "/" + aws.StringValue(instance.InstanceId) + "/"
+		}
 		machines[i].Maxprocs = int(s.config.VCPU)
 	}
 	return machines, nil
@@ -890,16 +898,20 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 	if err != nil {
 		return err
 	}
-	sess, err := session.NewSession(s.AWSConfig)
-	if err != nil {
-		return err
+	if useInstanceIDPrefix {
+		sess, err := session.NewSession(s.AWSConfig)
+		if err != nil {
+			log.Error.Printf("session.NewSession: %v", err)
+			return err
+		}
+		meta := ec2metadata.New(sess)
+		doc, err := meta.GetInstanceIdentityDocument()
+		if err != nil {
+			log.Error.Printf("ec2metadata.GetInstanceIdentityDocument: %v", err)
+			return err
+		}
+		handler = http.StripPrefix("/"+doc.InstanceID, handler)
 	}
-	meta := ec2metadata.New(sess)
-	doc, err := meta.GetInstanceIdentityDocument()
-	if err != nil {
-		return err
-	}
-	handler = http.StripPrefix("/"+doc.InstanceID, handler)
 	config.ClientAuth = tls.RequireAndVerifyClientCert
 	server := &http.Server{
 		TLSConfig: config,
