@@ -48,6 +48,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
@@ -603,7 +604,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			return nil, fmt.Errorf("ec2.DescribeInstances %s[%d]: no dns name or ip addresss available", aws.StringValue(instance.InstanceId), i)
 		}
 		machines[i] = new(bigmachine.Machine)
-		machines[i].Addr = fmt.Sprintf("https://%s/", addr)
+		machines[i].Addr = fmt.Sprintf("https://%s/%s/", addr, aws.StringValue(instance.InstanceId))
 		machines[i].Maxprocs = int(s.config.VCPU)
 	}
 	return machines, nil
@@ -889,6 +890,16 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 	if err != nil {
 		return err
 	}
+	sess, err := session.NewSession(s.AWSConfig)
+	if err != nil {
+		return err
+	}
+	meta := ec2metadata.New(sess)
+	doc, err := meta.GetInstanceIdentityDocument()
+	if err != nil {
+		return err
+	}
+	handler = http.StripPrefix("/"+doc.InstanceID, handler)
 	config.ClientAuth = tls.RequireAndVerifyClientCert
 	server := &http.Server{
 		TLSConfig: config,

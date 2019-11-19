@@ -16,7 +16,7 @@ import (
 // defaultEc2BootPrefix is rewritten to the current version.
 const (
 	defaultEc2BootPrefix  = "https://grail-public-bin.s3-us-west-2.amazonaws.com/linux/amd64/ec2boot"
-	defaultEc2BootVersion = "0.4"
+	defaultEc2BootVersion = "0.5"
 	defaultEc2Boot        = defaultEc2BootPrefix + defaultEc2BootVersion
 )
 
