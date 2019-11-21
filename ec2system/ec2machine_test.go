@@ -41,10 +41,10 @@ func TestDiskConfig(t *testing.T) {
 }
 
 func TestMutualHTTPS(t *testing.T) {
-	save := useInstanceIDPrefix
-	useInstanceIDPrefix = false
+	save := useInstanceIDSuffix
+	useInstanceIDSuffix = false
 	defer func() {
-		useInstanceIDPrefix = save
+		useInstanceIDSuffix = save
 	}()
 	// This is a really nasty way of testing what's going on here,
 	// but we do want to test this property end-to-end.

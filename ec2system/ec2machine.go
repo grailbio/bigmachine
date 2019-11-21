@@ -610,7 +610,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		}
 		machines[i] = new(bigmachine.Machine)
 		machines[i].Addr = fmt.Sprintf("https://%s/", addr)
-		if useInstanceIDPrefix {
+		if useInstanceIDSuffix {
 			machines[i].Addr += aws.StringValue(instance.InstanceId) + "/"
 		}
 		machines[i].Maxprocs = int(s.config.VCPU)
