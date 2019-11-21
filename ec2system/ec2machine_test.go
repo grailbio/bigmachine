@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bigmachine/internal/authority"
 	"github.com/grailbio/testutil"
 	"golang.org/x/net/http2"
@@ -41,6 +42,11 @@ func TestDiskConfig(t *testing.T) {
 }
 
 func TestMutualHTTPS(t *testing.T) {
+	save := useInstanceIDSuffix
+	useInstanceIDSuffix = false
+	defer func() {
+		useInstanceIDSuffix = save
+	}()
 	// This is a really nasty way of testing what's going on here,
 	// but we do want to test this property end-to-end.
 	mux := new(http.ServeMux)
@@ -68,8 +74,9 @@ func TestMutualHTTPS(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var listenAndServeError errors.Once
 	go func() {
-		sys.ListenAndServe(fmt.Sprintf(":%d", port), mux)
+		listenAndServeError.Set(sys.ListenAndServe(fmt.Sprintf(":%d", port), mux))
 	}()
 	time.Sleep(time.Second)
 
@@ -83,6 +90,9 @@ func TestMutualHTTPS(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "remote error: tls: bad certificate") {
 		t.Fatalf("bad error %v", err)
+	}
+	if err := listenAndServeError.Err(); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -48,6 +48,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
@@ -89,6 +90,11 @@ var (
 
 	// Used to rate limit EC2 calls.
 	limiter = rate.NewLimiter(rate.Limit(1), 2)
+
+	// useInstanceIDSuffix determines whether machine addresses
+	// assigned by ec2system should include the AWS EC2 instance IDs.
+	// This is exposed as an option here for testing purposes.
+	useInstanceIDSuffix = true
 )
 
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
@@ -604,6 +610,9 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		}
 		machines[i] = new(bigmachine.Machine)
 		machines[i].Addr = fmt.Sprintf("https://%s/", addr)
+		if useInstanceIDSuffix {
+			machines[i].Addr += aws.StringValue(instance.InstanceId) + "/"
+		}
 		machines[i].Maxprocs = int(s.config.VCPU)
 	}
 	return machines, nil
@@ -888,6 +897,20 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 	_, config, err := s.authority.HTTPSConfig()
 	if err != nil {
 		return err
+	}
+	if useInstanceIDSuffix {
+		sess, err := session.NewSession(s.AWSConfig)
+		if err != nil {
+			log.Error.Printf("session.NewSession: %v", err)
+			return err
+		}
+		meta := ec2metadata.New(sess)
+		doc, err := meta.GetInstanceIdentityDocument()
+		if err != nil {
+			log.Error.Printf("ec2metadata.GetInstanceIdentityDocument: %v", err)
+			return err
+		}
+		handler = http.StripPrefix("/"+doc.InstanceID, handler)
 	}
 	config.ClientAuth = tls.RequireAndVerifyClientCert
 	server := &http.Server{
