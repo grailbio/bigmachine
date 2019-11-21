@@ -16,6 +16,7 @@ import (
 	"github.com/grailbio/bigmachine/internal/authority"
 	"github.com/grailbio/testutil"
 	"golang.org/x/net/http2"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestDiskConfig(t *testing.T) {
@@ -73,11 +74,10 @@ func TestMutualHTTPS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	go func() {
-		if err := sys.ListenAndServe(fmt.Sprintf(":%d", port), mux); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	var g errgroup.Group
+	g.Go(func() error {
+		return sys.ListenAndServe(fmt.Sprintf(":%d", port), mux)
+	})
 	time.Sleep(time.Second)
 
 	config, _, err := authority.HTTPSConfig()
@@ -90,6 +90,9 @@ func TestMutualHTTPS(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "remote error: tls: bad certificate") {
 		t.Fatalf("bad error %v", err)
+	}
+	if err := g.Wait(); err != nil {
+		t.Fatal(err)
 	}
 }
 
