@@ -358,7 +358,7 @@ type shutdownRequest struct {
 	Message string
 }
 
-// Shutdown will cause the process to exit aysnchronously at a point
+// Shutdown will cause the process to exit asynchronously at a point
 // in the future no sooner than the specified delay.
 func (s *Supervisor) Shutdown(ctx context.Context, req shutdownRequest, _ *struct{}) error {
 	var wg sync.WaitGroup
@@ -366,8 +366,8 @@ func (s *Supervisor) Shutdown(ctx context.Context, req shutdownRequest, _ *struc
 	go func() {
 		wg.Done()
 		time.Sleep(req.Delay)
-		log.Print(req.Message, "\n")
-		os.Exit(0)
+		log.Print(req.Message)
+		s.system.Exit(1)
 	}()
 	// Ensure the go routine is scheduled so that the delay is
 	// more accurate than it otherwise would be.

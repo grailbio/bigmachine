@@ -109,7 +109,7 @@ func newTestMachine(t *testing.T, params ...Param) (m *Machine, supervisor *fake
 		keepalivePeriod:     time.Minute,
 		keepaliveTimeout:    2 * time.Minute,
 		keepaliveRpcTimeout: 10 * time.Second,
-		tailDone:            make(chan bool, 1),
+		tailDone:            make(chan struct{}, 1),
 	}
 	for _, param := range params {
 		param.applyParam(m)

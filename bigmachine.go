@@ -246,7 +246,7 @@ func (b *B) Start(ctx context.Context, n int, params ...Param) ([]*Machine, erro
 			return nil, errors.E(errors.Invalid, "no services provided")
 		}
 		m.owner = true
-		m.tailDone = make(chan bool, 1)
+		m.tailDone = make(chan struct{}, 1)
 		m.start(b)
 		b.machines[m.Addr] = m
 	}
@@ -366,10 +366,9 @@ func (b *B) pprofIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (b *B) shutdownAllMachines(ctx context.Context, duration time.Duration) {
-	b.mu.Lock()
+func shutdownAllMachines(ctx context.Context, duration time.Duration, machines []*Machine) {
 	// Shutdown all of the existing machines.
-	for _, m := range b.machines {
+	for _, m := range machines {
 		// shutdown is best effort
 		err := m.Call(ctx, "Supervisor.Shutdown",
 			shutdownRequest{
@@ -382,25 +381,23 @@ func (b *B) shutdownAllMachines(ctx context.Context, duration time.Duration) {
 				m.Addr, err)
 		}
 	}
-	var wg sync.WaitGroup
-	wg.Add(len(b.machines))
-	timeout := time.After(duration)
+	ctx, cancel := context.WithTimeout(ctx, duration)
+	defer cancel()
+	grp, ctx := errgroup.WithContext(ctx)
 	// Wait for the logs to propogate or for a timeout to occur.
-	for _, m := range b.machines {
-		go func(addr string, ch chan bool) {
+	for _, m := range machines {
+		// capture variables for closure below.
+		addr, ch := m.Addr, m.tailDone
+		grp.Go(func() error {
 			select {
-			case tailed := <-ch:
-				if tailed {
-					log.Info.Printf("log closed for %v\n", addr)
-				}
-			case <-timeout:
-				log.Error.Printf("timeout after %v waiting for logs to close from: %v\n", duration, addr)
+			case <-ch:
+			case <-ctx.Done():
+				log.Error.Printf("waiting for log to propagate: %v: %v", addr, ctx.Err())
 			}
-			wg.Done()
-		}(m.Addr, m.tailDone)
+			return nil
+		})
 	}
-	b.mu.Unlock()
-	wg.Wait()
+	grp.Wait()
 }
 
 // Shutdown tears down resources associated with this B. It should be called
@@ -410,7 +407,7 @@ func (b *B) shutdownAllMachines(ctx context.Context, duration time.Duration) {
 //	defer b.Shutdown()
 //	// driver code
 func (b *B) Shutdown() {
-	b.shutdownAllMachines(context.Background(), time.Second*20)
+	shutdownAllMachines(context.Background(), time.Second*20, b.Machines())
 	b.system.Shutdown()
 }
 

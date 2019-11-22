@@ -160,7 +160,7 @@ type Machine struct {
 	keepalivePeriod, keepaliveTimeout, keepaliveRpcTimeout time.Duration
 
 	// used to wait for the output from the worker to be completed.
-	tailDone chan bool
+	tailDone chan struct{}
 }
 
 // Owned tells whether this machine was created and is managed
@@ -343,11 +343,9 @@ func (m *Machine) loop(ctx context.Context, system System) {
 				if err != nil && err != context.Canceled {
 					log.Error.Printf("%s: tail: %s", m.Addr, err)
 				}
-				m.tailDone <- false
 				close(m.tailDone)
 			}()
 		} else {
-			m.tailDone <- false
 			close(m.tailDone)
 		}
 		if !m.NoExec {
