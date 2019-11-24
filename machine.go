@@ -6,6 +6,7 @@ package bigmachine
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,7 +22,6 @@ import (
 
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/fatbin"
-	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
@@ -158,6 +158,9 @@ type Machine struct {
 	// KeepalivePeriod, keepaliveTimeout, and keepaliveRpcTimeout configures
 	// keepalive behavior.
 	keepalivePeriod, keepaliveTimeout, keepaliveRpcTimeout time.Duration
+
+	// used to wait for the output from the worker to be completed.
+	tailDone chan struct{}
 }
 
 // Owned tells whether this machine was created and is managed
@@ -316,20 +319,34 @@ func (m *Machine) setState(s State) {
 	}
 }
 
+var nl = []byte{'\n'}
+
 func (m *Machine) loop(ctx context.Context, system System) {
 	m.setState(Starting)
-
 	if m.owner {
 		if system != nil {
 			go func() {
 				r, err := system.Tail(ctx, m)
 				if err == nil {
-					_, err = io.Copy(iofmt.PrefixWriter(os.Stderr, m.Addr+": "), r)
+					// Scan the log output for the sync marker or an error.
+					sc := bufio.NewScanner(r)
+					for sc.Scan() {
+						line := sc.Bytes()
+						if bytes.HasSuffix(line, logSyncMarker) {
+							break
+						}
+						os.Stderr.Write(line)
+						os.Stderr.Write(nl)
+					}
+					err = sc.Err()
 				}
 				if err != nil && err != context.Canceled {
 					log.Error.Printf("%s: tail: %s", m.Addr, err)
 				}
+				close(m.tailDone)
 			}()
+		} else {
+			close(m.tailDone)
 		}
 		if !m.NoExec {
 			// If we're the owner, loop is called after the machine was started
