@@ -384,11 +384,11 @@ func shutdownAllMachines(ctx context.Context, duration time.Duration, machines [
 	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	var wg sync.WaitGroup
+	wg.Add(len(machines))
 	// Wait for the logs to propagate or for a timeout to occur.
 	for _, m := range machines {
 		// Capture variables for closure below.
 		addr, ch := m.Addr, m.tailDone
-		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			select {
