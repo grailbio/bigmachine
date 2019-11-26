@@ -22,6 +22,7 @@ import (
 
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/fatbin"
+	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
@@ -328,6 +329,7 @@ func (m *Machine) loop(ctx context.Context, system System) {
 			go func() {
 				r, err := system.Tail(ctx, m)
 				if err == nil {
+					w := iofmt.PrefixWriter(os.Stderr, m.Addr+": ")
 					// Scan the log output for the sync marker or an error.
 					sc := bufio.NewScanner(r)
 					for sc.Scan() {
@@ -335,8 +337,8 @@ func (m *Machine) loop(ctx context.Context, system System) {
 						if bytes.HasSuffix(line, logSyncMarker) {
 							break
 						}
-						os.Stderr.Write(line)
-						os.Stderr.Write(nl)
+						w.Write(line)
+						w.Write(nl)
 					}
 					err = sc.Err()
 				}
