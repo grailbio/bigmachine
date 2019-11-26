@@ -246,7 +246,7 @@ func (b *B) Start(ctx context.Context, n int, params ...Param) ([]*Machine, erro
 			return nil, errors.E(errors.Invalid, "no services provided")
 		}
 		m.owner = true
-		m.tailDone = make(chan struct{}, 1)
+		m.tailDone = make(chan struct{})
 		m.start(b)
 		b.machines[m.Addr] = m
 	}
@@ -383,21 +383,22 @@ func shutdownAllMachines(ctx context.Context, duration time.Duration, machines [
 	}
 	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
-	grp, ctx := errgroup.WithContext(ctx)
+	var wg sync.WaitGroup
 	// Wait for the logs to propagate or for a timeout to occur.
 	for _, m := range machines {
 		// Capture variables for closure below.
 		addr, ch := m.Addr, m.tailDone
-		grp.Go(func() error {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			select {
 			case <-ch:
 			case <-ctx.Done():
 				log.Error.Printf("waiting for log to propagate: %v: %v", addr, ctx.Err())
 			}
-			return nil
-		})
+		}()
 	}
-	grp.Wait()
+	wg.Wait()
 }
 
 // Shutdown tears down resources associated with this B. It should be called
