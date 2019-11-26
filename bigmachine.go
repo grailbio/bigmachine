@@ -384,9 +384,9 @@ func shutdownAllMachines(ctx context.Context, duration time.Duration, machines [
 	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	grp, ctx := errgroup.WithContext(ctx)
-	// Wait for the logs to propogate or for a timeout to occur.
+	// Wait for the logs to propagate or for a timeout to occur.
 	for _, m := range machines {
-		// capture variables for closure below.
+		// Capture variables for closure below.
 		addr, ch := m.Addr, m.tailDone
 		grp.Go(func() error {
 			select {
