@@ -320,32 +320,35 @@ func (m *Machine) setState(s State) {
 	}
 }
 
-var nl = []byte{'\n'}
-
 func (m *Machine) loop(ctx context.Context, system System) {
 	m.setState(Starting)
 	if m.owner {
 		if system != nil {
 			go func() {
-				r, err := system.Tail(ctx, m)
-				if err == nil {
-					w := iofmt.PrefixWriter(os.Stderr, m.Addr+": ")
-					// Scan the log output for the sync marker or an error.
-					sc := bufio.NewScanner(r)
-					for sc.Scan() {
-						line := sc.Bytes()
-						if bytes.HasSuffix(line, logSyncMarker) {
-							break
-						}
-						w.Write(line)
-						w.Write(nl)
+				var err error
+				defer func() {
+					if err != nil && err != context.Canceled {
+						log.Error.Printf("%s: tail: %s", m.Addr, err)
 					}
-					err = sc.Err()
+					close(m.tailDone)
+				}()
+				r, err := system.Tail(ctx, m)
+				if err != nil {
+					return
 				}
-				if err != nil && err != context.Canceled {
-					log.Error.Printf("%s: tail: %s", m.Addr, err)
+				w := iofmt.PrefixWriter(os.Stderr, m.Addr+": ")
+				// Scan the log output for the sync marker or an error.
+				sc := bufio.NewScanner(r)
+				for sc.Scan() {
+					line := sc.Bytes()
+					if bytes.HasSuffix(line, logSyncMarker) {
+						break
+					}
+					if _, err = w.Write(append(line, '\n')); err != nil {
+						return
+					}
 				}
-				close(m.tailDone)
+				err = sc.Err()
 			}()
 		} else {
 			close(m.tailDone)
