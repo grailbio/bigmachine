@@ -157,7 +157,8 @@ type System struct {
 	Flavor Flavor
 
 	// AWSConfig is used to launch the system's instances.
-	// Default region is us-west-2.
+	// Default region is that found in the launching instance's metadata
+	// or if that is not available, us-west-2.
 	AWSConfig *aws.Config
 
 	// InstanceProfile is the instance profile with which to launch the instance.
@@ -267,7 +268,13 @@ func (s *System) Init(b *bigmachine.B) error {
 		s.AWSConfig = &aws.Config{}
 	}
 	if s.AWSConfig.Region == nil {
-		s.AWSConfig.Region = aws.String("us-west-2")
+		region := "us-west-2"
+		sess, _ := session.NewSession(s.AWSConfig)
+		// This can block for 5 seconds if run outside of AWS.
+		if doc, err := ec2metadata.New(sess).GetInstanceIdentityDocument(); err == nil {
+			region = doc.Region
+		}
+		s.AWSConfig.Region = aws.String(region)
 	}
 	if s.Diskspace == 0 {
 		s.Diskspace = 200
