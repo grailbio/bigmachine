@@ -32,6 +32,7 @@ func init() {
 			"the instance profile with which to launch new instances")
 		constr.StringVar(&system.SecurityGroup, "security-group", "",
 			"the security group with which new instances are launched")
+		constr.StringVar(&system.DefaultRegion, "default-region", "us-west-2", "default AWS region to use when one is not explicitly set via an aws.Config")
 		diskspace := constr.Int("diskspace", 200, "the amount of (root) disk space to allocate")
 		dataspace := constr.Int("dataspace", 0, "the amount of scratch/data space to allocate")
 		constr.StringVar(&system.Binary, "binary",
