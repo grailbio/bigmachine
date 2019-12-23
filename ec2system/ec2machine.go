@@ -891,6 +891,9 @@ func (s *System) HTTPClient() *http.Client {
 // from the same system instance. Main also starts a local HTTP
 // server on port 3333 for debugging and local inspection.
 func (s *System) Main() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go monitorSpotActions(ctx)
 	return http.ListenAndServe(":3333", nil)
 }
 
@@ -1040,6 +1043,32 @@ func (*System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
 	timeout = 10 * time.Minute
 	rpcTimeout = 2 * time.Minute
 	return
+}
+
+// monitorSpotActions monitors spot instance actions and logs them.
+func monitorSpotActions(ctx context.Context) {
+	tick := time.NewTicker(30 * time.Second)
+	for {
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			return
+		}
+		resp, err := http.Get("http://169.254.169.254/latest/meta-data/spot/instance-action")
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Error.Printf("error reading meta-data/spot/instance-action response body: %v", err)
+			continue
+		}
+		log.Printf("spot instance action: %v", string(b))
+	}
 }
 
 type args map[string]interface{}
