@@ -1058,16 +1058,18 @@ func monitorSpotActions(ctx context.Context) {
 		if err != nil {
 			continue
 		}
+		func() {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			continue
+				return
 		}
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			log.Error.Printf("error reading meta-data/spot/instance-action response body: %v", err)
-			continue
+				return
 		}
 		log.Printf("spot instance action: %v", string(b))
+		}()
 	}
 }
 
