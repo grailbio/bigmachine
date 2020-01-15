@@ -1045,8 +1045,15 @@ func (*System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
 	return
 }
 
-// monitorSpotActions monitors spot instance actions and logs them.
+// monitorSpotActions monitors spot instance actions and logs them. In
+// particular, this logs spot instance terminations to help users differentiate
+// spot instance terminations from other termination conditions (e.g. OOM
+// errors, panics, etc.).
 func monitorSpotActions(ctx context.Context) {
+	// We should get a spot instance termination notice two minutes before
+	// termination[0], so polling every thirty seconds should guarantee that we
+	// log it.
+	// [0] https://aws.amazon.com/blogs/aws/new-ec2-spot-instance-termination-notices/
 	tick := time.NewTicker(30 * time.Second)
 	for {
 		select {
