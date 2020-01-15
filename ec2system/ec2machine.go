@@ -1066,16 +1066,16 @@ func monitorSpotActions(ctx context.Context) {
 			continue
 		}
 		func() {
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
 				return
-		}
-		b, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Error.Printf("error reading meta-data/spot/instance-action response body: %v", err)
+			}
+			b, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Error.Printf("error reading meta-data/spot/instance-action response body: %v", err)
 				return
-		}
-		log.Printf("spot instance action: %v", string(b))
+			}
+			log.Printf("spot instance action: %v", string(b))
 		}()
 	}
 }
