@@ -54,6 +54,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/fatbin"
+	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
 	"github.com/grailbio/base/sync/once"
@@ -891,6 +892,9 @@ func (s *System) HTTPClient() *http.Client {
 // from the same system instance. Main also starts a local HTTP
 // server on port 3333 for debugging and local inspection.
 func (s *System) Main() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go monitorSpotActions(ctx)
 	return http.ListenAndServe(":3333", nil)
 }
 
@@ -1040,6 +1044,45 @@ func (*System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
 	timeout = 10 * time.Minute
 	rpcTimeout = 2 * time.Minute
 	return
+}
+
+// monitorSpotActions monitors spot instance actions and logs them. In
+// particular, this logs spot instance terminations to help users differentiate
+// spot instance terminations from other termination conditions (e.g. OOM
+// errors, panics, etc.).
+func monitorSpotActions(ctx context.Context) {
+	// We should get a spot instance termination notice two minutes before
+	// termination[0], so polling every thirty seconds should guarantee that we
+	// log it.
+	// [0] https://aws.amazon.com/blogs/aws/new-ec2-spot-instance-termination-notices/
+	tick := time.NewTicker(30 * time.Second)
+	for {
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			return
+		}
+		resp, err := http.Get("http://169.254.169.254/latest/meta-data/spot/instance-action")
+		if err != nil {
+			continue
+		}
+		func() {
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return
+			}
+			const maxBody = 512
+			// Truncate the body if necessary.
+			lb := limitbuf.NewLogger(512)
+			// Use maxBody+1, so we can detect truncation.
+			_, err := io.Copy(lb, io.LimitReader(resp.Body, maxBody+1))
+			if err != nil {
+				log.Error.Printf("error reading meta-data/spot/instance-action response body: %v", err)
+				return
+			}
+			log.Printf("spot instance action: %v", lb.String())
+		}()
+	}
 }
 
 type args map[string]interface{}
