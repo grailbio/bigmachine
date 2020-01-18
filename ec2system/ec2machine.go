@@ -54,6 +54,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/fatbin"
+	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
 	"github.com/grailbio/base/sync/once"
@@ -1075,7 +1076,10 @@ func monitorSpotActions(ctx context.Context) {
 				log.Error.Printf("error reading meta-data/spot/instance-action response body: %v", err)
 				return
 			}
-			log.Printf("spot instance action: %v", string(b))
+			// Truncate the body if necessary.
+			lb := limitbuf.NewLogger(256)
+			fmt.Fprint(lb, b)
+			log.Printf("spot instance action: %v", lb.String())
 		}()
 	}
 }
