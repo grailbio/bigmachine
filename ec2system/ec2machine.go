@@ -1071,14 +1071,15 @@ func monitorSpotActions(ctx context.Context) {
 			if resp.StatusCode != http.StatusOK {
 				return
 			}
-			b, err := ioutil.ReadAll(resp.Body)
+			const maxBody = 512
+			// Truncate the body if necessary.
+			lb := limitbuf.NewLogger(512)
+			// Use maxBody+1, so we can detect truncation.
+			_, err := io.Copy(lb, io.LimitReader(resp.Body, maxBody+1))
 			if err != nil {
 				log.Error.Printf("error reading meta-data/spot/instance-action response body: %v", err)
 				return
 			}
-			// Truncate the body if necessary.
-			lb := limitbuf.NewLogger(512)
-			fmt.Fprint(lb, b)
 			log.Printf("spot instance action: %v", lb.String())
 		}()
 	}
