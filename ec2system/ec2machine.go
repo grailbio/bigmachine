@@ -1077,7 +1077,7 @@ func monitorSpotActions(ctx context.Context) {
 				return
 			}
 			// Truncate the body if necessary.
-			lb := limitbuf.NewLogger(256)
+			lb := limitbuf.NewLogger(512)
 			fmt.Fprint(lb, b)
 			log.Printf("spot instance action: %v", lb.String())
 		}()
