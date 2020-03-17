@@ -33,6 +33,13 @@ type System interface {
 	// take over the process; the bigmachine fails if main returns (and
 	// if it does, it should always return with an error).
 	Main() error
+	// Event logs an event of typ with (key, value) fields given in fieldPairs
+	// as k0, v0, k1, v1, ...kn, vn. For example:
+	//
+	//  s.Event("bigmachine:machineStart", "addr", "https://m0")
+	//
+	// These semi-structured events are used for analytics.
+	Event(typ string, fieldPairs ...interface{})
 	// HTTPClient returns an HTTP client that can be used to communicate
 	// from drivers to machines as well as between machines.
 	HTTPClient() *http.Client

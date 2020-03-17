@@ -146,6 +146,9 @@ type Machine struct {
 	client *rpc.Client
 	cancel func()
 
+	// event logs an event. See System.Event.
+	event func(typ string, fieldPairs ...interface{})
+
 	mu        sync.Mutex
 	state     int64
 	err       error
@@ -269,6 +272,10 @@ func (m *Machine) start(b *B) {
 	if m.keepalivePeriod == 0 {
 		m.keepalivePeriod, m.keepaliveTimeout, m.keepaliveRpcTimeout = b.System().KeepaliveConfig()
 	}
+	m.event = func(_ string, _ ...interface{}) {}
+	if b != nil {
+		m.event = b.system.Event
+	}
 	m.cancelers = make(map[canceler]struct{})
 	ctx := context.Background()
 	ctx, m.cancel = context.WithCancel(ctx)
@@ -288,6 +295,10 @@ func (m *Machine) setError(err error) {
 	m.err = err
 	m.mu.Unlock()
 	m.setState(Stopped)
+	m.event("bigmachine:machineError",
+		"addr", m.Addr,
+		"error", err.Error(),
+	)
 	log.Error.Printf("%s: %v", m.Addr, err)
 }
 
@@ -313,6 +324,7 @@ func (m *Machine) setState(s State) {
 			c.Cancel()
 		}
 		m.cancelers = make(map[canceler]struct{})
+		m.event("bigmachine:machineStop", "addr", m.Addr)
 	}
 	m.mu.Unlock()
 	for _, c := range triggered {
@@ -321,8 +333,13 @@ func (m *Machine) setState(s State) {
 }
 
 func (m *Machine) loop(ctx context.Context, system System) {
+	start := time.Now()
 	m.setState(Starting)
 	if m.owner {
+		m.event("bigmachine:machineAlive",
+			"addr", m.Addr,
+			"duration", time.Since(start).Nanoseconds()/1e6,
+		)
 		if system != nil {
 			go func() {
 				var err error
@@ -387,11 +404,11 @@ func (m *Machine) loop(ctx context.Context, system System) {
 		// (up or down) by maintaining a periodic ping.
 		m.setState(Running)
 		for {
-			start := time.Now()
+			callStart := time.Now()
 			err := m.retryCall(ctx, m.keepaliveTimeout, m.keepaliveRpcTimeout, "Supervisor.Ping", 0, nil)
 			if err != nil {
 				m.errorf("ping failed after %s (timeout=%s, rpc timeout=%s): %v",
-					time.Since(start), m.keepaliveTimeout, m.keepaliveRpcTimeout, err)
+					time.Since(callStart), m.keepaliveTimeout, m.keepaliveRpcTimeout, err)
 				return
 			}
 			time.Sleep(m.keepalivePeriod / 2)
@@ -427,16 +444,20 @@ func (m *Machine) loop(ctx context.Context, system System) {
 
 	const keepalive = 5 * time.Minute
 	for {
-		start := time.Now()
+		callStart := time.Now()
 		var reply keepaliveReply
 		err := m.retryCall(ctx, m.keepaliveTimeout, m.keepaliveRpcTimeout, "Supervisor.Keepalive", keepalive, &reply)
 		if err != nil {
 			m.errorf("keepalive failed after %s (timeout=%s, rpc timeout=%s): %v",
-				time.Since(start), m.keepaliveTimeout, m.keepaliveRpcTimeout, err)
+				time.Since(callStart), m.keepaliveTimeout, m.keepaliveRpcTimeout, err)
 			return
 		}
+		m.event("bigmachine:machineAlive",
+			"addr", m.Addr,
+			"duration", time.Since(start).Nanoseconds()/1e6,
+		)
 		m.mu.Lock()
-		m.keepaliveReplyTimes[m.numKeepalive%len(m.keepaliveReplyTimes)] = time.Since(start)
+		m.keepaliveReplyTimes[m.numKeepalive%len(m.keepaliveReplyTimes)] = time.Since(callStart)
 		m.numKeepalive++
 		m.nextKeepalive = time.Now().Add(reply.Next)
 		m.mu.Unlock()

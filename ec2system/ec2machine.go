@@ -53,6 +53,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/grailbio/base/errors"
+	"github.com/grailbio/base/eventlog"
 	"github.com/grailbio/base/fatbin"
 	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
@@ -220,6 +221,9 @@ type System struct {
 
 	// AdditionalEC2Tags will be applied to this system's instances.
 	AdditionalEC2Tags []*ec2.Tag
+
+	// Eventer is used to log semi-structured events in service of analytics.
+	Eventer eventlog.Eventer
 
 	privateKey *rsa.PrivateKey
 
@@ -524,7 +528,11 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			}
 			instanceIds := make([]string, n)
 			for i := range instanceIds {
-				instanceIds[i] = aws.StringValue(describe.SpotInstanceRequests[i].InstanceId)
+				r := describe.SpotInstanceRequests[i]
+				instanceIds[i] = aws.StringValue(r.InstanceId)
+				s.Event("bigmachine:ec2:spotInstanceRequestFulfill",
+					"requestID", r.SpotInstanceRequestId,
+					"instanceID", r.InstanceId)
 			}
 			return instanceIds, nil
 		}
@@ -624,6 +632,10 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		if useInstanceIDSuffix {
 			machines[i].Addr += aws.StringValue(instance.InstanceId) + "/"
 		}
+		s.Event("bigmachine:ec2:machineStart",
+			"instanceType", s.InstanceType,
+			"addr", machines[i].Addr,
+			"instanceID", instance.InstanceId)
 		machines[i].Maxprocs = int(s.config.VCPU)
 	}
 	return machines, nil
@@ -896,6 +908,13 @@ func (s *System) Main() error {
 	defer cancel()
 	go monitorSpotActions(ctx)
 	return http.ListenAndServe(":3333", nil)
+}
+
+func (s *System) Event(typ string, fieldPairs ...interface{}) {
+	if s.Eventer == nil {
+		return
+	}
+	s.Eventer.Event(typ, fieldPairs...)
 }
 
 // ListenAndServe serves the provided handler on a HTTP server
