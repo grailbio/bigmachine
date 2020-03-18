@@ -872,6 +872,16 @@ func (s *System) HTTPClient() *http.Client {
 	// TODO(marius): propagate error to caller
 	err := s.clientOnce.Do(func() (err error) {
 		s.clientConfig, _, err = s.authority.HTTPSConfig()
+		if err != nil {
+			return
+		}
+		// Set up the TLS configuration for http/2. If we didn't do this,
+		// http.ConfigureTransport would. However, because we share the
+		// configuration between Transports and HTTPClient can be called
+		// concurrently, we do it ourselves to avoid a data race. See:
+		// https://github.com/golang/net/blob/244492dfa37a/http2/transport.go#L154-L159
+		s.clientConfig.NextProtos = append([]string{"h2"}, s.clientConfig.NextProtos...)
+		s.clientConfig.NextProtos = append(s.clientConfig.NextProtos, "http/1.1")
 		return
 	})
 	if err != nil {
