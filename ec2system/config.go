@@ -39,6 +39,7 @@ func init() {
 			"",
 			"the bootstrap bigmachine binary with which machines are launched")
 		sshkeys := constr.String("sshkey", "", "comma-separated list of ssh keys to be installed")
+		constr.InstanceVar(&system.Eventer, "eventer", "eventer/cloudwatch", "the event logger used to log bigmachine events")
 		constr.StringVar(&system.Username, "username", "", "user name for tagging purposes")
 		var sess *session.Session
 		constr.InstanceVar(&sess, "aws", "aws", "AWS configuration for all EC2 calls")

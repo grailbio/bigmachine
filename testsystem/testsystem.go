@@ -164,6 +164,10 @@ func (s *System) Main() error {
 	panic("Main called on testsystem")
 }
 
+// Event is a no-op for the test system, as we do not care about event logs in
+// tests.
+func (*System) Event(_ string, _ ...interface{}) {}
+
 // HTTPClient returns an http.Client that can converse with
 // servers created by this test system.
 func (s *System) HTTPClient() *http.Client {

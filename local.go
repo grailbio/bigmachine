@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,6 +122,17 @@ func (*localSystem) Main() error {
 	var c chan struct{}
 	<-c // hang forever
 	panic("not reached")
+}
+
+func (s *localSystem) Event(typ string, fieldPairs ...interface{}) {
+	fields := []string{fmt.Sprintf("eventType:%s", typ)}
+	for i := 0; i < len(fieldPairs); i++ {
+		name := fieldPairs[i].(string)
+		i++
+		value := fieldPairs[i]
+		fields = append(fields, fmt.Sprintf("%s:%v", name, value))
+	}
+	log.Debug.Print(strings.Join(fields, ", "))
 }
 
 func (s *localSystem) ListenAndServe(addr string, handler http.Handler) error {
