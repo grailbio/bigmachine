@@ -94,15 +94,17 @@ func (c *Client) getClient(addr string) *clientState {
 	return h
 }
 
-func (c *Client) resetClient(h *clientState, serviceMethod, reason string) {
+// updateClientState updates h based on its current state and err.
+func (c *Client) updateClientState(h *clientState, err error, serviceMethod string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.clients[h.addr] == h {
-		log.Outputf(c.getLogger(h.addr), log.Error, "resetting http client %s while calling to %s: %s", h.addr, serviceMethod, reason)
-		if h.cached != nil {
-			h.cached.CloseIdleConnections()
-		}
+	if err != nil && c.clients[h.addr] == h {
+		log.Outputf(c.getLogger(h.addr), log.Error, "resetting http client %s while calling to %s: %s", h.addr, serviceMethod, err.Error())
 		delete(c.clients, h.addr)
+	}
+	if c.clients[h.addr] != h {
+		// h is defunct, so we close idle connections to enable collection.
+		h.cached.CloseIdleConnections()
 	}
 }
 
@@ -184,14 +186,15 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	}
 
 	h := c.getClient(addr)
+	defer func() {
+		c.updateClientState(h, err, serviceMethod)
+	}()
 	resp, err := ctxhttp.Post(ctx, h.Client(), url, contentType, body)
 	switch err {
 	case nil:
 	case context.DeadlineExceeded, context.Canceled:
-		c.resetClient(h, serviceMethod, "deadline exceeded or cancelled")
 		return err
 	default:
-		c.resetClient(h, serviceMethod, "temporary network error")
 		return errors.E(errors.Net, errors.Temporary, err)
 	}
 	if InjectFailures {
@@ -199,29 +202,26 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	}
 	switch arg := reply.(type) {
 	case *io.ReadCloser:
+		if resp.StatusCode == 200 {
+			// Wrap the actual response in a stream reader so that errors are
+			// propagated properly. Callers are responsible for closing the
+			// stream.
+			*arg = streamReader{resp}
+			return nil
+		}
+		// In all other cases, we close thet body.
+		defer resp.Body.Close()
 		switch {
 		case resp.StatusCode == methodErrorCode:
 			dec := gob.NewDecoder(resp.Body)
-			defer resp.Body.Close()
 			return decodeError(serviceMethod, dec)
-		case resp.StatusCode == 200:
-			// Wrap the actual response in a stream reader so that
-			// errors are propagated properly.
-			*arg = streamReader{resp}
 		case 400 <= resp.StatusCode && resp.StatusCode < 500:
 			body, err := ioutil.ReadAll(resp.Body)
-			// Nothing to do if closing fails.
-			_ = resp.Body.Close()
-			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: client error %s, %v, %v", url, resp.Status, string(body), err))
-			return errors.E(errors.Fatal, errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
+			return errors.E(errors.Fatal, errors.Invalid, fmt.Sprintf("%s: client error %s, %v, %v", url, resp.Status, string(body), err))
 		default:
 			body, err := ioutil.ReadAll(resp.Body)
-			// Nothing to do if closing fails.
-			_ = resp.Body.Close()
-			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: bad reply status %s, %v, %v", url, resp.Status, string(body), err))
-			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
+			return errors.E(errors.Fatal, errors.Invalid, fmt.Sprintf("%s: bad reply status %s, %v, %v", url, resp.Status, string(body), err))
 		}
-		return nil
 	default:
 		defer resp.Body.Close()
 		sizeReader := &sizeTrackingReader{Reader: resp.Body}
@@ -232,7 +232,6 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		case resp.StatusCode == 200:
 			err := dec.Decode(reply)
 			if err != nil {
-				c.resetClient(h, serviceMethod, "error decoding reply")
 				err = errors.E(errors.Invalid, errors.Temporary, "error while decoding reply for "+serviceMethod, err)
 			}
 			replyBytes = sizeReader.Len()
@@ -242,12 +241,10 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			return err
 		case 400 <= resp.StatusCode && resp.StatusCode < 500:
 			body, err := ioutil.ReadAll(resp.Body)
-			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: client error %s, %v, %v", url, resp.Status, string(body), err))
-			return errors.E(errors.Fatal, errors.Invalid, fmt.Sprintf("%s: client error %s", url, resp.Status))
+			return errors.E(errors.Fatal, errors.Invalid, fmt.Sprintf("%s: client error %s, %v, %v", url, resp.Status, string(body), err))
 		default:
 			body, err := ioutil.ReadAll(resp.Body)
-			c.resetClient(h, serviceMethod, fmt.Sprintf("%s: bad reply status %s, %v, %v", url, resp.Status, string(body), err))
-			return errors.E(errors.Invalid, errors.Temporary, fmt.Sprintf("%s: bad reply status %s", url, resp.Status))
+			return errors.E(errors.Fatal, errors.Invalid, fmt.Sprintf("%s: bad reply status %s, %v, %v", url, resp.Status, string(body), err))
 		}
 	}
 }
