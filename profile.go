@@ -168,8 +168,9 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 	}
 	defer func() {
 		// We generally close the profile buffers as we are done using them to
-		// free resources. In error cases, we may still have buffers left to
-		// close. We do that here.
+		// free resources, setting the corresponding entries in profiles to nil.
+		// In error cases, we may still have buffers left to close. We do that
+		// here.
 		for _, prof := range profiles {
 			if prof == nil {
 				continue
