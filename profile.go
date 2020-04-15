@@ -17,6 +17,7 @@ import (
 	"github.com/google/pprof/profile"
 	"github.com/grailbio/base/diagnostic/dump"
 	"github.com/grailbio/base/log"
+	"github.com/grailbio/bigmachine/internal/filebuf"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -154,12 +155,28 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 				log.Error.Printf("failed to collect profile %s from %s: %v", p.which, m.Addr, err)
 				return nil
 			}
+			prof, err := filebuf.New(rc)
+			if err != nil {
+				log.Error.Printf("failed to read profile from %s: %v", m.Addr, err)
+				return nil
+			}
 			mu.Lock()
-			profiles[m] = rc
+			profiles[m] = prof
 			mu.Unlock()
 			return nil
 		})
 	}
+	defer func() {
+		// We generally close the profile buffers as we are done using them to
+		// free resources. In error cases, we may still have buffers left to
+		// close. We do that here.
+		for _, prof := range profiles {
+			if prof == nil {
+				continue
+			}
+			_ = prof.Close()
+		}
+	}()
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("failed to fetch profiles: %v", err)
 	}
@@ -175,8 +192,12 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 				continue
 			}
 			fmt.Fprintf(w, "%s:\n", m.Addr)
-			io.Copy(w, prof)
-			prof.Close()
+			_, err := io.Copy(w, prof)
+			_ = prof.Close()
+			profiles[m] = nil
+			if err != nil {
+				return fmt.Errorf("failed to append profile from %s: %v", m.Addr, err)
+			}
 			fmt.Fprintln(w)
 		}
 		return nil
@@ -185,7 +206,8 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 	var parsed []*profile.Profile
 	for m, rc := range profiles {
 		prof, err := profile.Parse(rc)
-		rc.Close()
+		_ = rc.Close()
+		profiles[m] = nil
 		if err != nil {
 			return fmt.Errorf("failed to parse profile from %s: %v", m.Addr, err)
 		}
