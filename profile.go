@@ -5,11 +5,9 @@
 package bigmachine
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"sort"
 	"strconv"
@@ -19,6 +17,7 @@ import (
 	"github.com/google/pprof/profile"
 	"github.com/grailbio/base/diagnostic/dump"
 	"github.com/grailbio/base/log"
+	"github.com/grailbio/bigmachine/internal/filebuf"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -142,7 +141,7 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 	g, ctx := errgroup.WithContext(ctx)
 	var (
 		mu       sync.Mutex
-		profiles = map[*Machine][]byte{}
+		profiles = make(map[*Machine]io.ReadCloser)
 		machines = p.b.Machines()
 	)
 	for _, m := range machines {
@@ -156,23 +155,29 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 				log.Error.Printf("failed to collect profile %s from %s: %v", p.which, m.Addr, err)
 				return nil
 			}
-			defer func() {
-				cerr := rc.Close()
-				if err == nil {
-					err = cerr
-				}
-			}()
-			b, err := ioutil.ReadAll(rc)
+			prof, err := filebuf.New(rc)
 			if err != nil {
 				log.Error.Printf("failed to read profile from %s: %v", m.Addr, err)
 				return nil
 			}
 			mu.Lock()
-			profiles[m] = b
+			profiles[m] = prof
 			mu.Unlock()
 			return nil
 		})
 	}
+	defer func() {
+		// We generally close the profile buffers as we are done using them to
+		// free resources, setting the corresponding entries in profiles to nil.
+		// In error cases, we may still have buffers left to close. We do that
+		// here.
+		for _, prof := range profiles {
+			if prof == nil {
+				continue
+			}
+			_ = prof.Close()
+		}
+	}()
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("failed to fetch profiles: %v", err)
 	}
@@ -188,15 +193,22 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 				continue
 			}
 			fmt.Fprintf(w, "%s:\n", m.Addr)
-			w.Write(prof)
+			_, err := io.Copy(w, prof)
+			_ = prof.Close()
+			profiles[m] = nil
+			if err != nil {
+				return fmt.Errorf("failed to append profile from %s: %v", m.Addr, err)
+			}
 			fmt.Fprintln(w)
 		}
 		return nil
 	}
 
 	var parsed []*profile.Profile
-	for m, b := range profiles {
-		prof, err := profile.Parse(bytes.NewReader(b))
+	for m, rc := range profiles {
+		prof, err := profile.Parse(rc)
+		_ = rc.Close()
+		profiles[m] = nil
 		if err != nil {
 			return fmt.Errorf("failed to parse profile from %s: %v", m.Addr, err)
 		}
