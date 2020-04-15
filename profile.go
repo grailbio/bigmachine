@@ -5,11 +5,9 @@
 package bigmachine
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"sort"
 	"strconv"
@@ -142,7 +140,7 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 	g, ctx := errgroup.WithContext(ctx)
 	var (
 		mu       sync.Mutex
-		profiles = map[*Machine][]byte{}
+		profiles = make(map[*Machine]io.ReadCloser)
 		machines = p.b.Machines()
 	)
 	for _, m := range machines {
@@ -156,19 +154,8 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 				log.Error.Printf("failed to collect profile %s from %s: %v", p.which, m.Addr, err)
 				return nil
 			}
-			defer func() {
-				cerr := rc.Close()
-				if err == nil {
-					err = cerr
-				}
-			}()
-			b, err := ioutil.ReadAll(rc)
-			if err != nil {
-				log.Error.Printf("failed to read profile from %s: %v", m.Addr, err)
-				return nil
-			}
 			mu.Lock()
-			profiles[m] = b
+			profiles[m] = rc
 			mu.Unlock()
 			return nil
 		})
@@ -188,15 +175,17 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 				continue
 			}
 			fmt.Fprintf(w, "%s:\n", m.Addr)
-			w.Write(prof)
+			io.Copy(w, prof)
+			prof.Close()
 			fmt.Fprintln(w)
 		}
 		return nil
 	}
 
 	var parsed []*profile.Profile
-	for m, b := range profiles {
-		prof, err := profile.Parse(bytes.NewReader(b))
+	for m, rc := range profiles {
+		prof, err := profile.Parse(rc)
+		rc.Close()
 		if err != nil {
 			return fmt.Errorf("failed to parse profile from %s: %v", m.Addr, err)
 		}
