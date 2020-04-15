@@ -22,7 +22,7 @@ func New(r io.Reader) (b *FileBuf, err error) {
 	if rc, ok := r.(io.Closer); ok {
 		defer rc.Close()
 	}
-	file, err := ioutil.TempFile("", "bigslice-filebuf-")
+	file, err := ioutil.TempFile("", "bigmachine-filebuf-")
 	if err != nil {
 		return nil, errors.E("error opening temp file for filebuf", err)
 	}
