@@ -209,7 +209,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 			*arg = streamReader{resp}
 			return nil
 		}
-		// In all other cases, we close thet body.
+		// In all other cases, we close the body.
 		defer resp.Body.Close()
 		switch {
 		case resp.StatusCode == methodErrorCode:
