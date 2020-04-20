@@ -193,7 +193,7 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 				continue
 			}
 			fmt.Fprintf(w, "%s:\n", m.Addr)
-			_, err := io.Copy(w, prof)
+			_, err = io.Copy(w, prof)
 			_ = prof.Close()
 			profiles[m] = nil
 			if err != nil {
