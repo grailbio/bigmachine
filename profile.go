@@ -206,7 +206,8 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 
 	var parsed []*profile.Profile
 	for m, rc := range profiles {
-		prof, err := profile.Parse(rc)
+		var prof *profile.Profile
+		prof, err = profile.Parse(rc)
 		_ = rc.Close()
 		profiles[m] = nil
 		if err != nil {
