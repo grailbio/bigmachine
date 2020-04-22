@@ -470,7 +470,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				KeyName:          ec2KeyName,
 			})
 			if err != nil {
-				return nil, err
+				return nil, errors.E("run-instances", err)
 			}
 			if len(resv.Instances) == 0 {
 				return nil, errors.E(errors.Invalid, "expected at least 1 instance")
@@ -504,7 +504,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				},
 			})
 			if err != nil {
-				return nil, err
+				return nil, errors.E("request-spot-instances", err)
 			}
 			if len(resp.SpotInstanceRequests) == 0 {
 				return nil, errors.E(errors.Invalid, "ec2.RequestSpotInstances: got 0 entries")
@@ -517,11 +517,11 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				describeInput.SpotInstanceRequestIds[i] = resp.SpotInstanceRequests[i].SpotInstanceRequestId
 			}
 			if err := s.ec2.WaitUntilSpotInstanceRequestFulfilledWithContext(ctx, describeInput); err != nil {
-				return nil, err
+				return nil, errors.E("wait-until-spot-instance-request-fulfilled", err)
 			}
 			describe, err := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, describeInput)
 			if err != nil {
-				return nil, err
+				return nil, errors.E("describe-spot-instance-requests", err)
 			}
 			if got, want := n, len(describeInput.SpotInstanceRequestIds); got != want {
 				return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want %d", got, want)
