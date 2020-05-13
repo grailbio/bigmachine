@@ -819,7 +819,7 @@ func (s *System) cloudConfig() *cloudConfig {
 		Content: tmpl(`
 		#!/bin/bash
 		set -e
-		systemctl set-default poweroff
+		systemctl set-default poweroff.target
 		bin=/tmp/ec2boot
 		curl -s {{.binary}} >$bin
 		chmod +x $bin
