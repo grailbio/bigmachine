@@ -800,7 +800,18 @@ func (s *System) cloudConfig() *cloudConfig {
 		c.AppendUnit(u)
 	}
 
-	// Write the bootstrapping script. It fetches the binary and runs it.
+	// Write the bootstrapping script. It fetches the binary and runs it. It
+	// also sets the default systemd target to `poweroff`. This prevents
+	// rebooting, as systemd will go to the `poweroff` target on the next boot.
+	// There are a few scenarios in which the instance may try to reboot:
+	//  + EC2 rebooting when encountering underlying hardware issues.
+	//  + EC2 scheduled maintenance.
+	//  + Services running that cause reboot, e.g. locksmithd. (This one is
+	//    avoidable by using an appropriate AMI).
+	//
+	// We prevent rebooting because bringing the instance back to a working
+	// state would add a lot of complexity, as we would need restore both
+	// internal state and the state of defined services.
 	c.AppendFile(CloudFile{
 		Permissions: "0755",
 		Path:        "/opt/bin/bootmachine",
@@ -808,6 +819,7 @@ func (s *System) cloudConfig() *cloudConfig {
 		Content: tmpl(`
 		#!/bin/bash
 		set -e
+		systemctl set-default poweroff.target
 		bin=/tmp/ec2boot
 		curl -s {{.binary}} >$bin
 		chmod +x $bin
