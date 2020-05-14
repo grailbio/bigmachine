@@ -702,16 +702,16 @@ func (s *System) cloudConfig() *cloudConfig {
 			Name:    fmt.Sprintf("format-%s.service", dataDeviceName),
 			Command: "start",
 			Content: tmpl(`
-			[Unit]
-			Description=Format /dev/{{.name}}
-			After=dev-{{.name}}.device
-			Requires=dev-{{.name}}.device
-			[Service]
-			Type=oneshot
-			RemainAfterExit=yes
-			ExecStart=/usr/bin/env wipefs -f /dev/{{.name}}
-			ExecStart=/usr/bin/env mkfs.ext4 -F /dev/{{.name}}
-		`, args{"name": dataDeviceName}),
+				[Unit]
+				Description=Format /dev/{{.name}}
+				After=dev-{{.name}}.device
+				Requires=dev-{{.name}}.device
+				[Service]
+				Type=oneshot
+				RemainAfterExit=yes
+				ExecStart=/usr/bin/env wipefs -f /dev/{{.name}}
+				ExecStart=/usr/bin/env mkfs.ext4 -F /dev/{{.name}}
+			`, args{"name": dataDeviceName}),
 		})
 	default:
 		dataDeviceName = "md0"
@@ -728,16 +728,16 @@ func (s *System) cloudConfig() *cloudConfig {
 			Name:    fmt.Sprintf("format-%s.service", dataDeviceName),
 			Command: "start",
 			Content: tmpl(`
-			[Unit]
-			Description=Format /dev/{{.md}}
-			After={{range $_, $name :=  .devices}}dev-{{$name}}.device {{end}}
-			Requires={{range $_, $name := .devices}}dev-{{$name}}.device {{end}}
-			[Service]
-			Type=oneshot
-			RemainAfterExit=yes
-			ExecStart=/usr/bin/env mdadm --create --run --verbose /dev/{{.md}} --level=0 --chunk=256 --name=bigmachine --raid-devices={{.devices|len}} {{range $_, $name := .devices}}/dev/{{$name}} {{end}}
-			ExecStart=/usr/bin/env mkfs.ext4 -F /dev/{{.md}}
-		`, args{"devices": devices, "md": dataDeviceName}),
+				[Unit]
+				Description=Format /dev/{{.md}}
+				After={{range $_, $name :=  .devices}}dev-{{$name}}.device {{end}}
+				Requires={{range $_, $name := .devices}}dev-{{$name}}.device {{end}}
+				[Service]
+				Type=oneshot
+				RemainAfterExit=yes
+				ExecStart=/usr/bin/env mdadm --create --run --verbose /dev/{{.md}} --level=0 --chunk=256 --name=bigmachine --raid-devices={{.devices|len}} {{range $_, $name := .devices}}/dev/{{$name}} {{end}}
+				ExecStart=/usr/bin/env mkfs.ext4 -F /dev/{{.md}}
+			`, args{"devices": devices, "md": dataDeviceName}),
 		})
 	}
 	if dataDeviceName != "" {
@@ -745,15 +745,15 @@ func (s *System) cloudConfig() *cloudConfig {
 			Name:    "mnt-data.mount",
 			Command: "start",
 			Content: tmpl(`
-			[Unit]
-			After=format-{{.name}}.service
-			Requires=format-{{.name}}.service
-			[Mount]
-			What=/dev/{{.name}}
-			Where=/mnt/data
-			Type=ext4
-			Options=data=writeback
-		`, args{"name": dataDeviceName}),
+				[Unit]
+				After=format-{{.name}}.service
+				Requires=format-{{.name}}.service
+				[Mount]
+				What=/dev/{{.name}}
+				Where=/mnt/data
+				Type=ext4
+				Options=data=writeback
+			`, args{"name": dataDeviceName}),
 		})
 
 		// In this case we have to explicitly remove devices from the
@@ -787,9 +787,8 @@ func (s *System) cloudConfig() *cloudConfig {
 		Path:        "/etc/sysctl.d/90-bigmachine",
 		Owner:       "root",
 		Content: tmpl(`
-    fs.file-max = {{.filemax}}
-    fs.nr_open = {{.nropen}}
-
+			fs.file-max = {{.filemax}}
+			fs.nr_open = {{.nropen}}
 		`, args{"filemax": filemax, "nropen": nropen}),
 	})
 
@@ -817,18 +816,18 @@ func (s *System) cloudConfig() *cloudConfig {
 		Path:        "/opt/bin/bootmachine",
 		Owner:       "root",
 		Content: tmpl(`
-		#!/bin/bash
-		set -e
-		systemctl set-default poweroff.target
-		bin=/tmp/ec2boot
-		curl -s {{.binary}} >$bin
-		chmod +x $bin
-		export BIGMACHINE_MODE=machine
-		export BIGMACHINE_SYSTEM=ec2
-		export BIGMACHINE_ADDR=:{{443}}
-		$bin -log=debug || true
-		sleep 30
-		exit 1
+			#!/bin/bash
+			set -e
+			systemctl set-default poweroff.target
+			bin=/tmp/ec2boot
+			curl -s {{.binary}} >$bin
+			chmod +x $bin
+			export BIGMACHINE_MODE=machine
+			export BIGMACHINE_SYSTEM=ec2
+			export BIGMACHINE_ADDR=:{{443}}
+			$bin -log=debug || true
+			sleep 30
+			exit 1
 		`, args{"binary": s.Binary}),
 	})
 	c.AppendFile(CloudFile{
