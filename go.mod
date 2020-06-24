@@ -5,7 +5,7 @@ go 1.12
 require (
 	github.com/aws/aws-sdk-go v1.29.24
 	github.com/google/pprof v0.0.0-20190930153522-6ce02741cba3
-	github.com/grailbio/base v0.0.7
+	github.com/grailbio/base v0.0.9
 	github.com/grailbio/testutil v0.0.3
 	github.com/shirou/gopsutil v2.19.9+incompatible
 	golang.org/x/crypto v0.0.0-20191002192127-34f69633bfdc
