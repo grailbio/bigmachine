@@ -133,6 +133,12 @@ func (c *Client) getLogger(addr string) *rateLimitingOutputter {
 // an error occurs while the response is streamed, the returned
 // io.ReadCloser errors on read.
 //
+// If the argument is a function that returns an (func () io.Reader), the
+// function is called to make the reader streamed directly to the server method
+// as above. This is mostly useful when using Call in a retry loop, as you often
+// want to create a new reader for each call, as opposed to continuing from
+// whatever unknown state remains from previously attempted calls.
+//
 // Remote errors are decoded into *errors.Error and returned.
 // (Non-*errors.Error errors are converted by the server.) The RPC
 // client does not pass on errors of kind errors.Net; these are
