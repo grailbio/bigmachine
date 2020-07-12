@@ -165,6 +165,9 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 		contentType string
 	)
 	switch arg := arg.(type) {
+	case func() io.Reader:
+		body = arg()
+		contentType = "application/octet-stream"
 	case io.Reader:
 		body = arg
 		contentType = "application/octet-stream"
