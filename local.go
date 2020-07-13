@@ -91,9 +91,6 @@ func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) 
 		cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
 		cmd.Env = append(cmd.Env, "BIGMACHINE_SYSTEM=local")
 		muxer := new(tee.Writer)
-		s.mu.Lock()
-		s.muxers[machines[i]] = muxer
-		s.mu.Unlock()
 		cmd.Stdout = iofmt.PrefixWriter(muxer, prefix)
 		cmd.Stderr = iofmt.PrefixWriter(muxer, prefix)
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=:%d", port))
@@ -101,6 +98,9 @@ func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) 
 
 		m := new(Machine)
 		m.Addr = fmt.Sprintf("https://localhost:%d/", port)
+		s.mu.Lock()
+		s.muxers[m] = muxer
+		s.mu.Unlock()
 		m.Maxprocs = 1
 		err = cmd.Start()
 		if err != nil {
