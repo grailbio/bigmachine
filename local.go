@@ -85,7 +85,7 @@ func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) 
 		if err != nil {
 			return nil, err
 		}
-		prefix := fmt.Sprintf("127.0.0.1:%d: ", port)
+		prefix := fmt.Sprintf("localhost:%d: ", port)
 		cmd := exec.Command(os.Args[0], os.Args[1:]...)
 		cmd.Env = os.Environ()
 		cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
@@ -96,11 +96,11 @@ func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) 
 		s.mu.Unlock()
 		cmd.Stdout = iofmt.PrefixWriter(muxer, prefix)
 		cmd.Stderr = iofmt.PrefixWriter(muxer, prefix)
-		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=127.0.0.1:%d", port))
+		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=localhost:%d", port))
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_AUTHORITY=%s", s.authorityFilename))
 
 		m := new(Machine)
-		m.Addr = fmt.Sprintf("https://127.0.0.1:%d/", port)
+		m.Addr = fmt.Sprintf("https://localhost:%d/", port)
 		m.Maxprocs = 1
 		err = cmd.Start()
 		if err != nil {
@@ -219,7 +219,7 @@ func (s *localSystem) Read(ctx context.Context, m *Machine, filename string) (io
 }
 
 func getFreeTCPPort() (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		return 0, err
 	}
