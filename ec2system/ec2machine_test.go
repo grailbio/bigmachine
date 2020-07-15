@@ -76,7 +76,7 @@ func TestMutualHTTPS(t *testing.T) {
 
 	var listenAndServeError errors.Once
 	go func() {
-		listenAndServeError.Set(sys.ListenAndServe(fmt.Sprintf(":%d", port), mux))
+		listenAndServeError.Set(sys.ListenAndServe(fmt.Sprintf("localhost:%d", port), mux))
 	}()
 	time.Sleep(time.Second)
 
@@ -97,7 +97,7 @@ func TestMutualHTTPS(t *testing.T) {
 }
 
 func getFreeTCPPort() (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", ":0")
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		return 0, err
 	}

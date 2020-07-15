@@ -93,7 +93,7 @@ func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) 
 		muxer := new(tee.Writer)
 		cmd.Stdout = iofmt.PrefixWriter(muxer, prefix)
 		cmd.Stderr = iofmt.PrefixWriter(muxer, prefix)
-		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=:%d", port))
+		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=localhost:%d", port))
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_AUTHORITY=%s", s.authorityFilename))
 
 		m := new(Machine)
@@ -176,7 +176,6 @@ func (s *localSystem) HTTPClient() *http.Client {
 	http2.ConfigureTransport(transport)
 	return &http.Client{Transport: transport}
 }
-
 func (*localSystem) Exit(code int) {
 	os.Exit(code)
 }
@@ -220,7 +219,7 @@ func (s *localSystem) Read(ctx context.Context, m *Machine, filename string) (io
 }
 
 func getFreeTCPPort() (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", ":0")
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		return 0, err
 	}
