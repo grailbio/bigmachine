@@ -34,6 +34,10 @@ const certDuration = 7 * 24 * time.Hour
 //  A T is a TLS certificate authority which can issue client and server
 // certificates and provide configuration for HTTPS clients.
 type T struct {
+	// pem is the PEM-encoded bytes of the CA. The key and certificate are also
+	// stored in other forms for convenient access.
+	pem []byte
+
 	key  *rsa.PrivateKey
 	cert *x509.Certificate
 
@@ -50,7 +54,7 @@ type T struct {
 func New(filename string) (*T, error) {
 	// As an extra precaution, we always exercise the read path, so if
 	// the CA PEM is missing, we generate it, and then read it back.
-	pemBlock, err := cached(filename, func() ([]byte, error) {
+	caPem, err := cached(filename, func() ([]byte, error) {
 		key, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
 			return nil, err
@@ -83,7 +87,12 @@ func New(filename string) (*T, error) {
 		return b.Bytes(), nil
 	})
 
-	var certBlock, keyBlock []byte
+	var (
+		// pemBlock is updated to hold the remaining blocks in the CA as we
+		// decode them.
+		pemBlock            = caPem
+		certBlock, keyBlock []byte
+	)
 	for {
 		var derBlock *pem.Block
 		derBlock, pemBlock = pem.Decode(pemBlock)
@@ -102,6 +111,7 @@ func New(filename string) (*T, error) {
 		return nil, errors.New("httpsca: incomplete certificate")
 	}
 	ca := new(T)
+	ca.pem = caPem
 	ca.cert, err = x509.ParseCertificate(certBlock)
 	if err != nil {
 		return nil, err
@@ -119,6 +129,11 @@ func New(filename string) (*T, error) {
 		return nil, err
 	}
 	return ca, nil
+}
+
+// Contents returns the PEM-encoded contents of the authority.
+func (c *T) Contents() []byte {
+	return c.pem
 }
 
 // Cert returns the authority's x509 certificate.
