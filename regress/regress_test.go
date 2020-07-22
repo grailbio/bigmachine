@@ -12,7 +12,7 @@ import (
 
 func TestRegress(t *testing.T) {
 	t.Parallel()
-	tests, err := filepath.Glob("tests/*/*")
+	tests, err := filepath.Glob("test*/*")
 	if err != nil {
 		t.Fatal(err)
 	}
