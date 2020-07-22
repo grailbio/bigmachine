@@ -176,6 +176,7 @@ func (s *localSystem) HTTPClient() *http.Client {
 	http2.ConfigureTransport(transport)
 	return &http.Client{Transport: transport}
 }
+
 func (*localSystem) Exit(code int) {
 	os.Exit(code)
 }
