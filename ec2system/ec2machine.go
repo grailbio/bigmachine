@@ -933,9 +933,45 @@ func (s *System) Event(typ string, fieldPairs ...interface{}) {
 	s.Eventer.Event(typ, fieldPairs...)
 }
 
-// ListenAndServe serves the provided handler on a HTTP server
-// configured for secure communications between ec2system
-// instances.
+func (s *System) newServer(handler http.Handler) (*http.Server, error) {
+	_, config, err := s.authority.HTTPSConfig()
+	if err != nil {
+		return nil, err
+	}
+	if useInstanceIDSuffix {
+		sess, err := session.NewSession(s.AWSConfig)
+		if err != nil {
+			log.Error.Printf("session.NewSession: %v", err)
+			return nil, err
+		}
+		meta := ec2metadata.New(sess)
+		doc, err := meta.GetInstanceIdentityDocument()
+		if err != nil {
+			log.Error.Printf("ec2metadata.GetInstanceIdentityDocument: %v", err)
+			return nil, err
+		}
+		handler = http.StripPrefix("/"+doc.InstanceID, handler)
+	}
+	config.ClientAuth = tls.RequireAndVerifyClientCert
+	server := &http.Server{
+		TLSConfig: config,
+		Handler:   handler,
+	}
+	http2.ConfigureServer(server, &http2.Server{
+		MaxConcurrentStreams: maxConcurrentStreams,
+	})
+	return server, nil
+}
+
+func (s *System) Serve(l net.Listener, handler http.Handler) error {
+	server, err := s.newServer(handler)
+	if err != nil {
+		return err
+	}
+	server.Addr = l.Addr().String()
+	return server.ServeTLS(l, "", "")
+}
+
 func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 	if addr == "" {
 		addr = os.Getenv("BIGMACHINE_ADDR")
@@ -943,33 +979,11 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 	if addr == "" {
 		return errors.E(errors.Invalid, "no address defined")
 	}
-	_, config, err := s.authority.HTTPSConfig()
+	server, err := s.newServer(handler)
 	if err != nil {
 		return err
 	}
-	if useInstanceIDSuffix {
-		sess, err := session.NewSession(s.AWSConfig)
-		if err != nil {
-			log.Error.Printf("session.NewSession: %v", err)
-			return err
-		}
-		meta := ec2metadata.New(sess)
-		doc, err := meta.GetInstanceIdentityDocument()
-		if err != nil {
-			log.Error.Printf("ec2metadata.GetInstanceIdentityDocument: %v", err)
-			return err
-		}
-		handler = http.StripPrefix("/"+doc.InstanceID, handler)
-	}
-	config.ClientAuth = tls.RequireAndVerifyClientCert
-	server := &http.Server{
-		TLSConfig: config,
-		Addr:      addr,
-		Handler:   handler,
-	}
-	http2.ConfigureServer(server, &http2.Server{
-		MaxConcurrentStreams: maxConcurrentStreams,
-	})
+	server.Addr = addr
 	return server.ListenAndServeTLS("", "")
 }
 

@@ -13,6 +13,7 @@ import (
 	"encoding/gob"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -172,6 +173,12 @@ func (*System) Event(_ string, _ ...interface{}) {}
 // servers created by this test system.
 func (s *System) HTTPClient() *http.Client {
 	return s.client
+}
+
+// Serve panics. It should not be called, provided a
+// correct bigmachine implementation.
+func (s *System) Serve(l net.Listener, handler http.Handler) error {
+	panic("Serve called on testsystem")
 }
 
 // ListenAndServe panics. It should not be called, provided a

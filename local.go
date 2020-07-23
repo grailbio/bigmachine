@@ -135,34 +135,51 @@ func (s *localSystem) Event(typ string, fieldPairs ...interface{}) {
 	log.Debug.Print(strings.Join(fields, ", "))
 }
 
-func (s *localSystem) ListenAndServe(addr string, handler http.Handler) error {
-	if addr == "" {
-		addr = os.Getenv("BIGMACHINE_ADDR")
-	}
-	if addr == "" {
-		return errors.New("no address defined")
-	}
+func (s *localSystem) newServer(handler http.Handler) (*http.Server, error) {
 	if filename := os.Getenv("BIGMACHINE_AUTHORITY"); filename != "" {
 		s.authorityFilename = filename
 		var err error
 		s.authority, err = authority.New(s.authorityFilename)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	_, config, err := s.authority.HTTPSConfig()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	config.ClientAuth = tls.RequireAndVerifyClientCert
 	server := &http.Server{
 		TLSConfig: config,
-		Addr:      addr,
 		Handler:   handler,
 	}
 	http2.ConfigureServer(server, &http2.Server{
 		MaxConcurrentStreams: maxConcurrentStreams,
 	})
+	return server, nil
+}
+
+func (s *localSystem) Serve(l net.Listener, handler http.Handler) error {
+	server, err := s.newServer(handler)
+	if err != nil {
+		return err
+	}
+	server.Addr = l.Addr().String()
+	return server.ServeTLS(l, "", "")
+}
+
+func (s *localSystem) ListenAndServe(addr string, handler http.Handler) error {
+	if addr == "" {
+		addr = os.Getenv("BIGMACHINE_ADDR")
+	}
+	if addr == "" {
+		return errors.E(errors.Invalid, "no address defined")
+	}
+	server, err := s.newServer(handler)
+	if err != nil {
+		return err
+	}
+	server.Addr = addr
 	return server.ListenAndServeTLS("", "")
 }
 
@@ -176,7 +193,6 @@ func (s *localSystem) HTTPClient() *http.Client {
 	http2.ConfigureTransport(transport)
 	return &http.Client{Transport: transport}
 }
-
 func (*localSystem) Exit(code int) {
 	os.Exit(code)
 }
