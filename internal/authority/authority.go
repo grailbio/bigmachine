@@ -16,6 +16,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -82,6 +83,9 @@ func New(filename string) (*T, error) {
 		}
 		return b.Bytes(), nil
 	})
+	if err != nil {
+		return nil, fmt.Errorf("could not build CA: %v", err)
+	}
 
 	var certBlock, keyBlock []byte
 	for {
@@ -119,6 +123,14 @@ func New(filename string) (*T, error) {
 		return nil, err
 	}
 	return ca, nil
+}
+
+// Contents returns the PEM-encoded certificate and key of the authority.
+func (c *T) Contents() []byte {
+	var contents []byte
+	contents = append(contents, c.certPEM...)
+	contents = append(contents, c.keyPEM...)
+	return contents
 }
 
 // Cert returns the authority's x509 certificate.
