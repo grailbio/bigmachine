@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bigmachine/internal/authority"
@@ -53,10 +54,14 @@ func TestMutualHTTPS(t *testing.T) {
 		fmt.Fprintln(w, "ok")
 	})
 
+	port, err := getFreeTCPPort()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	temp, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
-	var err error
 	sys := new(System)
 	sys.authority, err = authority.New(filepath.Join(temp, "authority"))
 	if err != nil {
@@ -69,20 +74,17 @@ func TestMutualHTTPS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listener, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	var listenAndServeError errors.Once
 	go func() {
-		listenAndServeError.Set(sys.Serve(listener, mux))
+		listenAndServeError.Set(sys.ListenAndServe(fmt.Sprintf("localhost:%d", port), mux))
 	}()
+	time.Sleep(time.Second)
 
 	config, _, err := authority.HTTPSConfig()
 	transport := &http.Transport{TLSClientConfig: config}
 	http2.ConfigureTransport(transport)
 	client := &http.Client{Transport: transport}
-	_, err = client.Get(fmt.Sprintf("https://%s/", listener.Addr().String()))
+	_, err = client.Get(fmt.Sprintf("https://localhost:%d/", port))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -92,4 +94,18 @@ func TestMutualHTTPS(t *testing.T) {
 	if err := listenAndServeError.Err(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func getFreeTCPPort() (int, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	if err != nil {
+		return 0, err
+	}
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port, nil
 }
