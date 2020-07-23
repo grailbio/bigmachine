@@ -20,7 +20,6 @@ import (
 
 	"github.com/grailbio/base/config"
 	"github.com/grailbio/base/errors"
-	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/internal/authority"
 	bigioutil "github.com/grailbio/bigmachine/internal/ioutil"
@@ -81,23 +80,23 @@ func (*localSystem) Name() string {
 func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) {
 	machines := make([]*Machine, count)
 	for i := range machines {
-		port, err := getFreeTCPPort()
+		l, err := net.Listen("tcp", "localhost:0")
 		if err != nil {
 			return nil, err
 		}
-		prefix := fmt.Sprintf("localhost:%d: ", port)
 		cmd := exec.Command(os.Args[0], os.Args[1:]...)
 		cmd.Env = os.Environ()
 		cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
 		cmd.Env = append(cmd.Env, "BIGMACHINE_SYSTEM=local")
 		muxer := new(tee.Writer)
-		cmd.Stdout = iofmt.PrefixWriter(muxer, prefix)
-		cmd.Stderr = iofmt.PrefixWriter(muxer, prefix)
-		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=localhost:%d", port))
+		cmd.Stdout = muxer
+		cmd.Stderr = muxer
+		addr := l.Addr().String()
+		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=%s", addr))
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_AUTHORITY=%s", s.authorityFilename))
 
 		m := new(Machine)
-		m.Addr = fmt.Sprintf("https://localhost:%d/", port)
+		m.Addr = fmt.Sprintf("https://%s/", addr)
 		s.mu.Lock()
 		s.muxers[m] = muxer
 		s.mu.Unlock()
@@ -135,34 +134,27 @@ func (s *localSystem) Event(typ string, fieldPairs ...interface{}) {
 	log.Debug.Print(strings.Join(fields, ", "))
 }
 
+func (s *localSystem) Serve(l net.Listener, handler http.Handler) error {
+	server, err := s.newServer(handler)
+	if err != nil {
+		return err
+	}
+	server.Addr = l.Addr().String()
+	return server.ServeTLS(l, "", "")
+}
+
 func (s *localSystem) ListenAndServe(addr string, handler http.Handler) error {
 	if addr == "" {
 		addr = os.Getenv("BIGMACHINE_ADDR")
 	}
 	if addr == "" {
-		return errors.New("no address defined")
+		return errors.E(errors.Invalid, "no address defined")
 	}
-	if filename := os.Getenv("BIGMACHINE_AUTHORITY"); filename != "" {
-		s.authorityFilename = filename
-		var err error
-		s.authority, err = authority.New(s.authorityFilename)
-		if err != nil {
-			return err
-		}
-	}
-	_, config, err := s.authority.HTTPSConfig()
+	server, err := s.newServer(handler)
 	if err != nil {
 		return err
 	}
-	config.ClientAuth = tls.RequireAndVerifyClientCert
-	server := &http.Server{
-		TLSConfig: config,
-		Addr:      addr,
-		Handler:   handler,
-	}
-	http2.ConfigureServer(server, &http2.Server{
-		MaxConcurrentStreams: maxConcurrentStreams,
-	})
+	server.Addr = addr
 	return server.ListenAndServeTLS("", "")
 }
 
@@ -219,16 +211,26 @@ func (s *localSystem) Read(ctx context.Context, m *Machine, filename string) (io
 	return bigioutil.NewClosingReader(f), nil
 }
 
-func getFreeTCPPort() (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
-	if err != nil {
-		return 0, err
+func (s *localSystem) newServer(handler http.Handler) (*http.Server, error) {
+	if filename := os.Getenv("BIGMACHINE_AUTHORITY"); filename != "" {
+		s.authorityFilename = filename
+		var err error
+		s.authority, err = authority.New(s.authorityFilename)
+		if err != nil {
+			return nil, err
+		}
 	}
-	l, err := net.ListenTCP("tcp", addr)
+	_, config, err := s.authority.HTTPSConfig()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-	return port, nil
+	config.ClientAuth = tls.RequireAndVerifyClientCert
+	server := &http.Server{
+		TLSConfig: config,
+		Handler:   handler,
+	}
+	http2.ConfigureServer(server, &http2.Server{
+		MaxConcurrentStreams: maxConcurrentStreams,
+	})
+	return server, nil
 }

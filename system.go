@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/gob"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -43,6 +44,9 @@ type System interface {
 	// HTTPClient returns an HTTP client that can be used to communicate
 	// from drivers to machines as well as between machines.
 	HTTPClient() *http.Client
+	// Serve serves the provided handler on an HTTP server listening on Listener
+	// l that is reachable from other instances in the bigmachine cluster.
+	Serve(l net.Listener, handle http.Handler) error
 	// ListenAndServe serves the provided handler on an HTTP server that
 	// is reachable from other instances in the bigmachine cluster. If addr
 	// is the empty string, the default cluster address is used.
