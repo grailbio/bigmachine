@@ -86,7 +86,14 @@ func TestMutualHTTPS(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "remote error: tls: bad certificate") {
+	// We expect to see a certificate error, but we occasionally see a broken
+	// pipe, presumably because the server closes the connection while we are
+	// still writing. This is claimed to be fixed[1] at least in part, but we
+	// still see the behavior, possibly because of some subtlety in our setup.
+	//
+	// [1] https://github.com/golang/go/issues/15709
+	if !strings.Contains(err.Error(), "remote error: tls: bad certificate") &&
+		!strings.Contains(err.Error(), "broken pipe") {
 		t.Fatalf("bad error %v", err)
 	}
 	if err := listenAndServeError.Err(); err != nil {
