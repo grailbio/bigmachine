@@ -231,8 +231,7 @@ type System struct {
 
 	ec2 ec2iface.EC2API
 
-	authority         *authority.T
-	authorityContents []byte
+	authority *authority.T
 
 	clientOnce   once.Task
 	clientConfig *tls.Config
@@ -335,10 +334,6 @@ func (s *System) Init(b *bigmachine.B) error {
 	}
 	s.ec2 = ec2.New(sess)
 	s.authority, err = authority.New(authorityPath)
-	if err != nil {
-		return err
-	}
-	s.authorityContents, err = ioutil.ReadFile(authorityPath)
 	if err != nil {
 		return err
 	}
@@ -833,7 +828,7 @@ func (s *System) cloudConfig() *cloudConfig {
 	c.AppendFile(CloudFile{
 		Permissions: "0644",
 		Path:        authorityPath,
-		Content:     string(s.authorityContents),
+		Content:     string(s.authority.Contents()),
 	})
 
 	sysctlPath := "/lib/systemd/systemd-sysctl"
