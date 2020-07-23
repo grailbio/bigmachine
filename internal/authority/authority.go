@@ -16,7 +16,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -83,9 +82,6 @@ func New(filename string) (*T, error) {
 		}
 		return b.Bytes(), nil
 	})
-	if err != nil {
-		return nil, fmt.Errorf("could not build CA: %v", err)
-	}
 
 	var certBlock, keyBlock []byte
 	for {
