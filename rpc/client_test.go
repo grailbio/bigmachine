@@ -65,7 +65,9 @@ func TestEncodeError(t *testing.T) {
 func newTestClient(t *testing.T) (string, *Client) {
 	t.Helper()
 	srv := NewServer()
-	srv.Register("Test", new(TestService))
+	if err := srv.Register("Test", new(TestService)); err != nil {
+		t.Fatal(err)
+	}
 	httpsrv := httptest.NewServer(srv)
 	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
 	if err != nil {
