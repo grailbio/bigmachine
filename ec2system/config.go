@@ -27,7 +27,8 @@ func init() {
 		// TODO(marius): maybe defer defaults to system impl?
 		constr.BoolVar(&system.OnDemand, "ondemand", false, "use on-demand instances")
 		constr.StringVar(&system.InstanceType, "instance", "m3.medium", "instance type to allocate")
-		constr.StringVar(&system.AMI, "ami", "ami-4296ec3a", "AMI to bootstrap")
+		// Flatcar-stable-2512.2.1-hvm
+		constr.StringVar(&system.AMI, "ami", "ami-0bb54692374ac10a7", "AMI to bootstrap")
 		constr.StringVar(&system.InstanceProfile, "instance-profile", "",
 			"the instance profile with which to launch new instances")
 		constr.StringVar(&system.SecurityGroup, "security-group", "",
