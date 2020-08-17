@@ -25,8 +25,6 @@ func init() {
 	gob.Register(service{})
 }
 
-var zeros [1024]byte
-
 type service struct{}
 
 func (service) Empty(ctx context.Context, howlong time.Duration, reply *io.ReadCloser) error {
