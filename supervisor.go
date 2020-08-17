@@ -31,7 +31,6 @@ import (
 )
 
 const (
-	maxTeeBuffer     = 1 << 20
 	memProfilePeriod = time.Minute
 )
 
