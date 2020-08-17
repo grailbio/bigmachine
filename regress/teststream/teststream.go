@@ -29,7 +29,11 @@ type service struct{}
 
 func (service) Empty(ctx context.Context, howlong time.Duration, reply *io.ReadCloser) error {
 	http2.VerboseLogs = true
-	go http.ListenAndServe("localhost:9090", nil)
+	go func() {
+		if err := http.ListenAndServe("localhost:8090", nil); err != nil {
+			log.Fatal(err)
+		}
+	}()
 	*reply = ioutil.NopCloser(bytes.NewReader(nil))
 	return nil
 }
