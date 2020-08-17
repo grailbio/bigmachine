@@ -42,7 +42,6 @@ func init() {
 }
 
 const maxConcurrentStreams = 20000
-const httpTimeout = 30 * time.Second
 
 // Local is a System that insantiates machines by
 // creating new processes on the local machine.
