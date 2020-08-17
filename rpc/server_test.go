@@ -42,7 +42,9 @@ func (s *TestService) ErrorError(ctx context.Context, err *errors.Error, reply *
 
 func TestServer(t *testing.T) {
 	srv := NewServer()
-	srv.Register("Test", new(TestService))
+	if err := srv.Register("Test", new(TestService)); err != nil {
+		t.Fatal(err)
+	}
 	httpsrv := httptest.NewServer(srv)
 	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
 	if err != nil {
