@@ -1,0 +1,5 @@
+// (*io.PipeWriter).CloseWithError "never overwrites the previous error if it
+// exists and always returns nil".
+//
+// https://golang.org/pkg/io/#PipeWriter.CloseWithError
+(*io.PipeWriter).CloseWithError
