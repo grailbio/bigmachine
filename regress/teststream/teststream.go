@@ -51,10 +51,7 @@ func main() {
 	m := machines[0]
 	<-m.Wait(bigmachine.Running)
 	var rc io.ReadCloser
-	if err := m.Call(ctx, "Service.Empty", time.Second, &rc); err != nil {
-		log.Fatal(err)
-	}
-	if err != nil {
+	if err = m.Call(ctx, "Service.Empty", time.Second, &rc); err != nil {
 		log.Fatal(err)
 	}
 	go func() {
