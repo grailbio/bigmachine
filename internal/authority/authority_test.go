@@ -44,6 +44,9 @@ func TestCA(t *testing.T) {
 
 func TestCAEphemeral(t *testing.T) {
 	ca, err := authority.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now()
 	ips := []net.IP{net.IPv4(1, 2, 3, 4)}
 	dnses := []string{"test2.grail.com"}
