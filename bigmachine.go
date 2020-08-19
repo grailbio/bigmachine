@@ -326,10 +326,10 @@ func (b *B) pprofIndex(w http.ResponseWriter, r *http.Request) {
 	for _, m := range machines {
 		m := m
 		g.Go(func() error {
-			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			ctxCall, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			var mstats []profileStat
-			if err := m.Call(ctx, "Supervisor.Profiles", struct{}{}, &mstats); err != nil {
+			if err := m.Call(ctxCall, "Supervisor.Profiles", struct{}{}, &mstats); err != nil {
 				log.Error.Printf("%q.\"Supervisor.Profiles\": %v", m.Addr, err)
 				return nil
 			}
