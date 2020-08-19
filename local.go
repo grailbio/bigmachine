@@ -159,9 +159,12 @@ func (s *localSystem) ListenAndServe(addr string, handler http.Handler) error {
 		Addr:      addr,
 		Handler:   handler,
 	}
-	http2.ConfigureServer(server, &http2.Server{
+	err = http2.ConfigureServer(server, &http2.Server{
 		MaxConcurrentStreams: maxConcurrentStreams,
 	})
+	if err != nil {
+		return fmt.Errorf("error configuring server: %v", err)
+	}
 	return server.ListenAndServeTLS("", "")
 }
 
