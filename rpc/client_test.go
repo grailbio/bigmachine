@@ -48,6 +48,7 @@ func TestClientError(t *testing.T) {
 func TestEncodeError(t *testing.T) {
 	url, client := newTestClient(t)
 	type teapot struct {
+		// nolint: unused
 		unexported int
 	}
 	// teapot will cause an encoding error because it has no exported fields.
