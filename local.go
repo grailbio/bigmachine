@@ -65,7 +65,7 @@ func (s *localSystem) Init(_ *B) error {
 	}
 	s.authorityFilename = f.Name()
 	_ = f.Close()
-	if err := os.Remove(s.authorityFilename); err != nil {
+	if err = os.Remove(s.authorityFilename); err != nil {
 		return err
 	}
 	s.authority, err = authority.New(s.authorityFilename)
