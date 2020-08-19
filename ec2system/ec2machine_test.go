@@ -81,6 +81,9 @@ func TestMutualHTTPS(t *testing.T) {
 	time.Sleep(time.Second)
 
 	config, _, err := authority.HTTPSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 	transport := &http.Transport{TLSClientConfig: config}
 	http2.ConfigureTransport(transport)
 	client := &http.Client{Transport: transport}
