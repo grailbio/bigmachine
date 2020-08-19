@@ -143,7 +143,9 @@ func (s *TestStreamService) Digest(ctx context.Context, arg io.Reader, reply *di
 
 func TestStream(t *testing.T) {
 	srv := NewServer()
-	srv.Register("Stream", new(TestStreamService))
+	if err := srv.Register("Stream", new(TestStreamService)); err != nil {
+		t.Fatal(err)
+	}
 	httpsrv := httptest.NewServer(srv)
 	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
 	if err != nil {
