@@ -51,7 +51,7 @@ func main() {
 	m := machines[0]
 	<-m.Wait(bigmachine.Running)
 	log.Printf("machine %s %s", m.Addr, m.State())
-	if err := m.Err(); err != nil {
+	if err = m.Err(); err != nil {
 		log.Fatal(err)
 	}
 
