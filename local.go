@@ -175,7 +175,10 @@ func (s *localSystem) HTTPClient() *http.Client {
 		log.Fatal(err)
 	}
 	transport := &http.Transport{TLSClientConfig: config}
-	http2.ConfigureTransport(transport)
+	if err = http2.ConfigureTransport(transport); err != nil {
+		// TODO: propagate error, or return error client
+		log.Fatal(err)
+	}
 	return &http.Client{Transport: transport}
 }
 
