@@ -172,12 +172,12 @@ func (s *localSystem) HTTPClient() *http.Client {
 	config, _, err := s.authority.HTTPSConfig()
 	if err != nil {
 		// TODO: propagate error, or return error client
-		log.Fatal(err)
+		log.Fatalf("error build TLS configuration: %v", err)
 	}
 	transport := &http.Transport{TLSClientConfig: config}
 	if err = http2.ConfigureTransport(transport); err != nil {
 		// TODO: propagate error, or return error client
-		log.Fatal(err)
+		log.Fatalf("error configuring transport: %v", err)
 	}
 	return &http.Client{Transport: transport}
 }

@@ -903,7 +903,7 @@ func (s *System) HTTPClient() *http.Client {
 	})
 	if err != nil {
 		// TODO: propagate error, or return error client
-		log.Fatal(err)
+		log.Fatalf("error build TLS configuration: %v", err)
 	}
 	transport := &http.Transport{
 		Dial:                (&net.Dialer{Timeout: httpTimeout}).Dial,
@@ -912,7 +912,7 @@ func (s *System) HTTPClient() *http.Client {
 	}
 	if err = http2.ConfigureTransport(transport); err != nil {
 		// TODO: propagate error, or return error client
-		log.Fatal(err)
+		log.Fatalf("error configuring transport: %v", err)
 	}
 	return &http.Client{Transport: transport}
 }
