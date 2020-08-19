@@ -151,7 +151,9 @@ func (b *B) run() {
 	}
 	b.server = rpc.NewServer()
 	supervisor := StartSupervisor(context.Background(), b, b.system, b.server)
-	b.server.Register("Supervisor", supervisor)
+	if err := b.server.Register("Supervisor", supervisor); err != nil {
+		log.Fatal(err)
+	}
 	if err := maybeInit(supervisor, b); err != nil {
 		log.Fatal(err)
 	}
