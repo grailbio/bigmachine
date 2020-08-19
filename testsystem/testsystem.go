@@ -191,7 +191,12 @@ func (s *System) Start(_ context.Context, count int) ([]*bigmachine.Machine, err
 	for i := range machines {
 		ctx, cancel := context.WithCancel(context.Background())
 		server := rpc.NewServer()
-		server.Register("Supervisor", bigmachine.StartSupervisor(ctx, s.b, s, server))
+		supervisor := bigmachine.StartSupervisor(ctx, s.b, s, server)
+		if err := server.Register("Supervisor", supervisor); err != nil {
+			// Something is broken if we can't register the supervisor in the
+			// testsystem.
+			panic(err)
+		}
 		mux := http.NewServeMux()
 		mux.Handle(bigmachine.RpcPrefix, server)
 		httpServer := httptest.NewServer(mux)
