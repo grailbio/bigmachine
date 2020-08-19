@@ -40,7 +40,7 @@ func TestTestSystem(t *testing.T) {
 	m := machines[0]
 	<-m.Wait(bigmachine.Running)
 	var reply int
-	if err := m.Call(ctx, "Service.Method", 0, &reply); err != nil {
+	if err = m.Call(ctx, "Service.Method", 0, &reply); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := reply, 1; got != want {
