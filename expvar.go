@@ -49,9 +49,9 @@ func (v machineVars) String() string {
 		})
 	}
 	if err := g.Wait(); err != nil {
-		b, err := json.Marshal(err.Error())
-		if err != nil {
-			log.Error.Printf("machineVars marshal: %v", err)
+		b, errMarshal := json.Marshal(err.Error())
+		if errMarshal != nil {
+			log.Error.Printf("machineVars marshal: %v", errMarshal)
 			return `"error"`
 		}
 		return string(b)
