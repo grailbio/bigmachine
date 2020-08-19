@@ -118,12 +118,12 @@ func (p profiler) ContentType() string {
 // Marshal writes the profile configured in pw to w.
 func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 	if p.addr != "" {
-		m, err := p.b.Dial(ctx, p.addr)
-		if err != nil {
+		var m *Machine
+		if m, err = p.b.Dial(ctx, p.addr); err != nil {
 			return fmt.Errorf("failed to dial machine: %v", err)
 		}
-		rc, err := getProfile(ctx, m, p.which, p.sec, p.debug, p.gc)
-		if err != nil {
+		var rc io.ReadCloser
+		if rc, err = getProfile(ctx, m, p.which, p.sec, p.debug, p.gc); err != nil {
 			return fmt.Errorf("failed to collect %s profile: %v", p.which, err)
 		}
 		defer func() {
@@ -178,7 +178,7 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 			_ = prof.Close()
 		}
 	}()
-	if err := g.Wait(); err != nil {
+	if err = g.Wait(); err != nil {
 		return fmt.Errorf("failed to fetch profiles: %v", err)
 	}
 	if len(profiles) == 0 {
