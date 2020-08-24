@@ -269,7 +269,7 @@ func (s *System) Init(b *bigmachine.B) error {
 	}
 	// TODO(marius): derive defaults from a config
 	if s.AMI == "" {
-		s.AMI = "ami-4296ec3a"
+		s.AMI = "ami-0bb54692374ac10a7"
 	}
 	if s.AWSConfig == nil {
 		s.AWSConfig = &aws.Config{}
