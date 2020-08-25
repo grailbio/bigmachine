@@ -375,11 +375,11 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		return nil, fmt.Errorf("failed to marshal cloud-config: %v", err)
 	}
 	err = describeImages.Do(s.AMI, func() error {
-		out, errDescribe := s.ec2.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		out, err2 := s.ec2.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 			ImageIds: []*string{aws.String(s.AMI)},
 		})
-		if errDescribe != nil {
-			return errDescribe
+		if err2 != nil {
+			return err2
 		}
 		if len(out.Images) != 1 || aws.StringValue(out.Images[0].ImageId) != s.AMI {
 			return errors.New("image not found")
@@ -443,7 +443,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 
 	if s.OnDemand {
 		run = func() ([]string, error) {
-			resv, errRun := s.ec2.RunInstances(&ec2.RunInstancesInput{
+			resv, err2 := s.ec2.RunInstances(&ec2.RunInstancesInput{
 				SubnetId:              aws.String(s.Subnet),
 				ImageId:               aws.String(s.AMI),
 				MaxCount:              aws.Int64(int64(count)),
@@ -464,8 +464,8 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				SecurityGroupIds: securityGroups,
 				KeyName:          ec2KeyName,
 			})
-			if errRun != nil {
-				return nil, errors.E("run-instances", errRun)
+			if err2 != nil {
+				return nil, errors.E("run-instances", err2)
 			}
 			if len(resv.Instances) == 0 {
 				return nil, errors.E(errors.Invalid, "expected at least 1 instance")
@@ -480,7 +480,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		// TODO(marius): should we use AvailabilityZoneGroup to ensure that
 		// all instances land in the same AZ?
 		run = func() ([]string, error) {
-			resp, errRun := s.ec2.RequestSpotInstancesWithContext(ctx, &ec2.RequestSpotInstancesInput{
+			resp, err2 := s.ec2.RequestSpotInstancesWithContext(ctx, &ec2.RequestSpotInstancesInput{
 				ValidUntil:    aws.Time(time.Now().Add(time.Minute)),
 				SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[*s.AWSConfig.Region])),
 				InstanceCount: aws.Int64(int64(count)),
@@ -498,8 +498,8 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 					KeyName:          ec2KeyName,
 				},
 			})
-			if errRun != nil {
-				return nil, errors.E("request-spot-instances", errRun)
+			if err2 != nil {
+				return nil, errors.E("request-spot-instances", err2)
 			}
 			if len(resp.SpotInstanceRequests) == 0 {
 				return nil, errors.E(errors.Invalid, "ec2.RequestSpotInstances: got 0 entries")
@@ -511,12 +511,12 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			for i := range describeInput.SpotInstanceRequestIds {
 				describeInput.SpotInstanceRequestIds[i] = resp.SpotInstanceRequests[i].SpotInstanceRequestId
 			}
-			if errRun = s.ec2.WaitUntilSpotInstanceRequestFulfilledWithContext(ctx, describeInput); errRun != nil {
-				return nil, errors.E("wait-until-spot-instance-request-fulfilled", errRun)
+			if err2 = s.ec2.WaitUntilSpotInstanceRequestFulfilledWithContext(ctx, describeInput); err2 != nil {
+				return nil, errors.E("wait-until-spot-instance-request-fulfilled", err2)
 			}
-			describe, errRun := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, describeInput)
-			if errRun != nil {
-				return nil, errors.E("describe-spot-instance-requests", errRun)
+			describe, err2 := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, describeInput)
+			if err2 != nil {
+				return nil, errors.E("describe-spot-instance-requests", err2)
 			}
 			if got, want := n, len(describeInput.SpotInstanceRequestIds); got != want {
 				return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want %d", got, want)
@@ -576,7 +576,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		if len(tag) > 250 { // EC2 tags are limited to 255 characters.
 			tag = tag[:250] + "..."
 		}
-		_, errTag := s.ec2.CreateTags(&ec2.CreateTagsInput{
+		_, err2 := s.ec2.CreateTags(&ec2.CreateTagsInput{
 			Resources: instanceIdsp,
 			Tags: append([]*ec2.Tag{
 				{Key: aws.String("Name"), Value: aws.String(tag)},
@@ -587,8 +587,8 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				{Key: aws.String("bigmachine:binary"), Value: aws.String(binary)},
 			}, s.AdditionalEC2Tags...),
 		})
-		if errTag != nil {
-			log.Error.Printf("ec2.CreateTags: %v", errTag)
+		if err2 != nil {
+			log.Error.Printf("ec2.CreateTags: %v", err2)
 		}
 	}()
 	// TODO(marius): custom WaitUntilInstanceRunningWithContext that's more aggressive
@@ -597,9 +597,10 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	}
 	if err = s.ec2.WaitUntilInstanceRunningWithContext(ctx, describeInput); err != nil {
 		log.Error.Printf("WaitUntilInstanceRunning: %v", err)
-		describeInstance, errWait := s.ec2.DescribeInstancesWithContext(ctx, describeInput)
-		if errWait != nil {
-			return nil, errWait
+		var describeInstance *ec2.DescribeInstancesOutput
+		describeInstance, err = s.ec2.DescribeInstancesWithContext(ctx, describeInput)
+		if err != nil {
+			return nil, err
 		}
 		for _, reserv := range describeInstance.Reservations {
 			for _, inst := range reserv.Instances {
