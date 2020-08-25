@@ -375,11 +375,11 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		return nil, fmt.Errorf("failed to marshal cloud-config: %v", err)
 	}
 	err = describeImages.Do(s.AMI, func() error {
-		out, errDo := s.ec2.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		out, errDescribe := s.ec2.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 			ImageIds: []*string{aws.String(s.AMI)},
 		})
-		if errDo != nil {
-			return errDo
+		if errDescribe != nil {
+			return errDescribe
 		}
 		if len(out.Images) != 1 || aws.StringValue(out.Images[0].ImageId) != s.AMI {
 			return errors.New("image not found")
