@@ -25,13 +25,15 @@ func init() {
 	gob.Register(service{})
 }
 
-var zeros [1024]byte
-
 type service struct{}
 
 func (service) Empty(ctx context.Context, howlong time.Duration, reply *io.ReadCloser) error {
 	http2.VerboseLogs = true
-	go http.ListenAndServe("localhost:9090", nil)
+	go func() {
+		if err := http.ListenAndServe("localhost:8090", nil); err != nil {
+			log.Fatal(err)
+		}
+	}()
 	*reply = ioutil.NopCloser(bytes.NewReader(nil))
 	return nil
 }
@@ -49,15 +51,13 @@ func main() {
 	m := machines[0]
 	<-m.Wait(bigmachine.Running)
 	var rc io.ReadCloser
-	if err := m.Call(ctx, "Service.Empty", time.Second, &rc); err != nil {
-		log.Fatal(err)
-	}
-	if err != nil {
+	if err = m.Call(ctx, "Service.Empty", time.Second, &rc); err != nil {
 		log.Fatal(err)
 	}
 	go func() {
 		time.Sleep(3 * time.Second)
-		pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+		// Best effort attempt to write out goroutines for diagnosing.
+		_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
 		log.Fatal("should be dead by now")
 	}()
 	if _, err := io.Copy(ioutil.Discard, rc); err != nil {

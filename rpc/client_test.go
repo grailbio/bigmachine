@@ -48,6 +48,7 @@ func TestClientError(t *testing.T) {
 func TestEncodeError(t *testing.T) {
 	url, client := newTestClient(t)
 	type teapot struct {
+		// nolint: structcheck,unused
 		unexported int
 	}
 	// teapot will cause an encoding error because it has no exported fields.
@@ -65,7 +66,9 @@ func TestEncodeError(t *testing.T) {
 func newTestClient(t *testing.T) (string, *Client) {
 	t.Helper()
 	srv := NewServer()
-	srv.Register("Test", new(TestService))
+	if err := srv.Register("Test", new(TestService)); err != nil {
+		t.Fatal(err)
+	}
 	httpsrv := httptest.NewServer(srv)
 	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
 	if err != nil {

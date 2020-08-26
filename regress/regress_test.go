@@ -17,6 +17,7 @@ func TestRegress(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range tests {
+		test := test
 		t.Run(test, func(t *testing.T) {
 			t.Parallel()
 			cmd := exec.Command("go", "run", test)

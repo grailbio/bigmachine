@@ -81,8 +81,13 @@ func TestMutualHTTPS(t *testing.T) {
 	time.Sleep(time.Second)
 
 	config, _, err := authority.HTTPSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 	transport := &http.Transport{TLSClientConfig: config}
-	http2.ConfigureTransport(transport)
+	if err = http2.ConfigureTransport(transport); err != nil {
+		t.Fatal(err)
+	}
 	client := &http.Client{Transport: transport}
 	_, err = client.Get(fmt.Sprintf("https://localhost:%d/", port))
 	if err == nil {

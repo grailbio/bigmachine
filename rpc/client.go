@@ -180,7 +180,7 @@ func (c *Client) Call(ctx context.Context, addr, serviceMethod string, arg, repl
 	default:
 		b := new(bytes.Buffer)
 		enc := gob.NewEncoder(b)
-		if err := enc.Encode(arg); err != nil {
+		if err = enc.Encode(arg); err != nil {
 			// Because we are writing into a Buffer, any error we see is a
 			// failure to encode, which will not succeed on retry without
 			// intervention.

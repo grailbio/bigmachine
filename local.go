@@ -42,7 +42,6 @@ func init() {
 }
 
 const maxConcurrentStreams = 20000
-const httpTimeout = 30 * time.Second
 
 // Local is a System that insantiates machines by
 // creating new processes on the local machine.
@@ -66,7 +65,7 @@ func (s *localSystem) Init(_ *B) error {
 	}
 	s.authorityFilename = f.Name()
 	_ = f.Close()
-	if err := os.Remove(s.authorityFilename); err != nil {
+	if err = os.Remove(s.authorityFilename); err != nil {
 		return err
 	}
 	s.authority, err = authority.New(s.authorityFilename)
@@ -160,9 +159,12 @@ func (s *localSystem) ListenAndServe(addr string, handler http.Handler) error {
 		Addr:      addr,
 		Handler:   handler,
 	}
-	http2.ConfigureServer(server, &http2.Server{
+	err = http2.ConfigureServer(server, &http2.Server{
 		MaxConcurrentStreams: maxConcurrentStreams,
 	})
+	if err != nil {
+		return fmt.Errorf("error configuring server: %v", err)
+	}
 	return server.ListenAndServeTLS("", "")
 }
 
@@ -170,10 +172,13 @@ func (s *localSystem) HTTPClient() *http.Client {
 	config, _, err := s.authority.HTTPSConfig()
 	if err != nil {
 		// TODO: propagate error, or return error client
-		log.Fatal(err)
+		log.Fatalf("error build TLS configuration: %v", err)
 	}
 	transport := &http.Transport{TLSClientConfig: config}
-	http2.ConfigureTransport(transport)
+	if err = http2.ConfigureTransport(transport); err != nil {
+		// TODO: propagate error, or return error client
+		log.Fatalf("error configuring transport: %v", err)
+	}
 	return &http.Client{Transport: transport}
 }
 

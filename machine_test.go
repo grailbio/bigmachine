@@ -95,7 +95,9 @@ func newTestMachine(t *testing.T, params ...Param) (m *Machine, supervisor *fake
 	t.Helper()
 	supervisor = new(fakeSupervisor)
 	srv := rpc.NewServer()
-	srv.Register("Supervisor", supervisor)
+	if err := srv.Register("Supervisor", supervisor); err != nil {
+		t.Fatal(err)
+	}
 	httpsrv := httptest.NewServer(srv)
 	client, err := rpc.NewClient(func() *http.Client { return httpsrv.Client() }, "/")
 	if err != nil {

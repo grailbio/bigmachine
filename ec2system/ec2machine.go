@@ -375,11 +375,11 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		return nil, fmt.Errorf("failed to marshal cloud-config: %v", err)
 	}
 	err = describeImages.Do(s.AMI, func() error {
-		out, err := s.ec2.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		out, err2 := s.ec2.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 			ImageIds: []*string{aws.String(s.AMI)},
 		})
-		if err != nil {
-			return err
+		if err2 != nil {
+			return err2
 		}
 		if len(out.Images) != 1 || aws.StringValue(out.Images[0].ImageId) != s.AMI {
 			return errors.New("image not found")
@@ -443,7 +443,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 
 	if s.OnDemand {
 		run = func() ([]string, error) {
-			resv, err := s.ec2.RunInstances(&ec2.RunInstancesInput{
+			resv, err2 := s.ec2.RunInstances(&ec2.RunInstancesInput{
 				SubnetId:              aws.String(s.Subnet),
 				ImageId:               aws.String(s.AMI),
 				MaxCount:              aws.Int64(int64(count)),
@@ -464,8 +464,8 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				SecurityGroupIds: securityGroups,
 				KeyName:          ec2KeyName,
 			})
-			if err != nil {
-				return nil, errors.E("run-instances", err)
+			if err2 != nil {
+				return nil, errors.E("run-instances", err2)
 			}
 			if len(resv.Instances) == 0 {
 				return nil, errors.E(errors.Invalid, "expected at least 1 instance")
@@ -480,7 +480,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		// TODO(marius): should we use AvailabilityZoneGroup to ensure that
 		// all instances land in the same AZ?
 		run = func() ([]string, error) {
-			resp, err := s.ec2.RequestSpotInstancesWithContext(ctx, &ec2.RequestSpotInstancesInput{
+			resp, err2 := s.ec2.RequestSpotInstancesWithContext(ctx, &ec2.RequestSpotInstancesInput{
 				ValidUntil:    aws.Time(time.Now().Add(time.Minute)),
 				SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[*s.AWSConfig.Region])),
 				InstanceCount: aws.Int64(int64(count)),
@@ -498,8 +498,8 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 					KeyName:          ec2KeyName,
 				},
 			})
-			if err != nil {
-				return nil, errors.E("request-spot-instances", err)
+			if err2 != nil {
+				return nil, errors.E("request-spot-instances", err2)
 			}
 			if len(resp.SpotInstanceRequests) == 0 {
 				return nil, errors.E(errors.Invalid, "ec2.RequestSpotInstances: got 0 entries")
@@ -511,12 +511,12 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			for i := range describeInput.SpotInstanceRequestIds {
 				describeInput.SpotInstanceRequestIds[i] = resp.SpotInstanceRequests[i].SpotInstanceRequestId
 			}
-			if err := s.ec2.WaitUntilSpotInstanceRequestFulfilledWithContext(ctx, describeInput); err != nil {
-				return nil, errors.E("wait-until-spot-instance-request-fulfilled", err)
+			if err2 = s.ec2.WaitUntilSpotInstanceRequestFulfilledWithContext(ctx, describeInput); err2 != nil {
+				return nil, errors.E("wait-until-spot-instance-request-fulfilled", err2)
 			}
-			describe, err := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, describeInput)
-			if err != nil {
-				return nil, errors.E("describe-spot-instance-requests", err)
+			describe, err2 := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, describeInput)
+			if err2 != nil {
+				return nil, errors.E("describe-spot-instance-requests", err2)
 			}
 			if got, want := n, len(describeInput.SpotInstanceRequestIds); got != want {
 				return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want %d", got, want)
@@ -543,7 +543,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		// solved by adding jitter to the retry policy as well, but a rate limiter
 		// is somewhat easier to reason about, and corresponds with the
 		// policies used to limit requests to the EC2 API.
-		if err := limiter.Wait(ctx); err != nil {
+		if err = limiter.Wait(ctx); err != nil {
 			break
 		}
 		instanceIds, err = run()
@@ -576,7 +576,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 		if len(tag) > 250 { // EC2 tags are limited to 255 characters.
 			tag = tag[:250] + "..."
 		}
-		_, err := s.ec2.CreateTags(&ec2.CreateTagsInput{
+		_, err2 := s.ec2.CreateTags(&ec2.CreateTagsInput{
 			Resources: instanceIdsp,
 			Tags: append([]*ec2.Tag{
 				{Key: aws.String("Name"), Value: aws.String(tag)},
@@ -587,17 +587,18 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				{Key: aws.String("bigmachine:binary"), Value: aws.String(binary)},
 			}, s.AdditionalEC2Tags...),
 		})
-		if err != nil {
-			log.Error.Printf("ec2.CreateTags: %v", err)
+		if err2 != nil {
+			log.Error.Printf("ec2.CreateTags: %v", err2)
 		}
 	}()
 	// TODO(marius): custom WaitUntilInstanceRunningWithContext that's more aggressive
 	describeInput := &ec2.DescribeInstancesInput{
 		InstanceIds: instanceIdsp,
 	}
-	if err := s.ec2.WaitUntilInstanceRunningWithContext(ctx, describeInput); err != nil {
+	if err = s.ec2.WaitUntilInstanceRunningWithContext(ctx, describeInput); err != nil {
 		log.Error.Printf("WaitUntilInstanceRunning: %v", err)
-		describeInstance, err := s.ec2.DescribeInstancesWithContext(ctx, describeInput)
+		var describeInstance *ec2.DescribeInstancesOutput
+		describeInstance, err = s.ec2.DescribeInstancesWithContext(ctx, describeInput)
 		if err != nil {
 			return nil, err
 		}
@@ -606,7 +607,6 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 				log.Printf("instance %s: %s", aws.StringValue(inst.InstanceId), inst.State)
 			}
 		}
-
 		return nil, err
 	}
 	describeInstance, err := s.ec2.DescribeInstancesWithContext(ctx, describeInput)
@@ -904,14 +904,17 @@ func (s *System) HTTPClient() *http.Client {
 	})
 	if err != nil {
 		// TODO: propagate error, or return error client
-		log.Fatal(err)
+		log.Fatalf("error build TLS configuration: %v", err)
 	}
 	transport := &http.Transport{
 		Dial:                (&net.Dialer{Timeout: httpTimeout}).Dial,
 		TLSClientConfig:     s.clientConfig,
 		TLSHandshakeTimeout: httpTimeout,
 	}
-	http2.ConfigureTransport(transport)
+	if err = http2.ConfigureTransport(transport); err != nil {
+		// TODO: propagate error, or return error client
+		log.Fatalf("error configuring transport: %v", err)
+	}
 	return &http.Client{Transport: transport}
 }
 
@@ -948,14 +951,14 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 		return err
 	}
 	if useInstanceIDSuffix {
-		sess, err := session.NewSession(s.AWSConfig)
-		if err != nil {
+		var sess *session.Session
+		if sess, err = session.NewSession(s.AWSConfig); err != nil {
 			log.Error.Printf("session.NewSession: %v", err)
 			return err
 		}
 		meta := ec2metadata.New(sess)
-		doc, err := meta.GetInstanceIdentityDocument()
-		if err != nil {
+		var doc ec2metadata.EC2InstanceIdentityDocument
+		if doc, err = meta.GetInstanceIdentityDocument(); err != nil {
 			log.Error.Printf("ec2metadata.GetInstanceIdentityDocument: %v", err)
 			return err
 		}
@@ -967,9 +970,12 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 		Addr:      addr,
 		Handler:   handler,
 	}
-	http2.ConfigureServer(server, &http2.Server{
+	err = http2.ConfigureServer(server, &http2.Server{
 		MaxConcurrentStreams: maxConcurrentStreams,
 	})
+	if err != nil {
+		return err
+	}
 	return server.ListenAndServeTLS("", "")
 }
 

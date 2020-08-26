@@ -60,18 +60,12 @@ type cloudConfig struct {
 // Merge merges cloudConfig d into c. List entries from c are
 // appended to d, and key-values are overwritten.
 func (c *cloudConfig) Merge(d *cloudConfig) {
-	for _, f := range d.WriteFiles {
-		c.WriteFiles = append(c.WriteFiles, f)
-	}
+	c.WriteFiles = append(c.WriteFiles, d.WriteFiles...)
 	if s := d.CoreOS.Update.RebootStrategy; s != "" {
 		c.CoreOS.Update.RebootStrategy = s
 	}
-	for _, u := range d.units {
-		c.units = append(c.units, u)
-	}
-	for _, k := range d.SshAuthorizedKeys {
-		c.SshAuthorizedKeys = append(c.SshAuthorizedKeys, k)
-	}
+	c.units = append(c.units, d.units...)
+	c.SshAuthorizedKeys = append(c.SshAuthorizedKeys, d.SshAuthorizedKeys...)
 }
 
 // AppendFile appends the file f to the cloudConfig c.
@@ -100,8 +94,7 @@ func (c *cloudConfig) AppendMount(mount []string) {
 // Marshal renders the cloudConfig into YAML, with the prerequisite
 // cloud-config header.
 func (c *cloudConfig) Marshal() ([]byte, error) {
-	var copy cloudConfig
-	copy = *c
+	copy := *c
 	if c.Flavor == CoreOS {
 		copy.CoreOS.Units = c.units
 	} else {

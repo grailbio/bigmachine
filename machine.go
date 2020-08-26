@@ -474,7 +474,7 @@ func (m *Machine) loop(ctx context.Context, system System) {
 			log.Printf("%s: supervisor indicated machine was unhealthy, taking heap profile and expvar dump", m.Addr)
 			suffix := "." + m.Hostname() + "-" + time.Now().Format("20060102T150405")
 			path := "heap" + suffix
-			if err := m.saveProfile(ctx, "heap", path); err != nil {
+			if err = m.saveProfile(ctx, "heap", path); err != nil {
 				log.Error.Printf("%s: heap profile failed: %v", m.Addr, err)
 			} else {
 				log.Printf("%s: heap profile saved to %s", m.Addr, path)
@@ -568,23 +568,23 @@ func (m *Machine) exec(ctx context.Context) error {
 	// the reader).
 	const timeout = 10 * time.Second
 	var info Info
-	if err := m.timeoutCall(ctx, timeout, "Supervisor.Info", struct{}{}, &info); err != nil {
+	if err = m.timeoutCall(ctx, timeout, "Supervisor.Info", struct{}{}, &info); err != nil {
 		return err
 	}
 	binInfo, ok := self.Stat(info.Goos, info.Goarch)
 	if !ok {
 		return errors.E(errors.Fatal, "no image for ", info.Goos, "/", info.Goarch)
 	}
-	if err := m.timeoutCall(ctx, timeout, "Supervisor.Setenv", m.environ, nil); err != nil {
+	if err = m.timeoutCall(ctx, timeout, "Supervisor.Setenv", m.environ, nil); err != nil {
 		return err
 	}
-	if err := m.timeoutCall(ctx, timeout, "Supervisor.Setargs", os.Args, nil); err != nil {
+	if err = m.timeoutCall(ctx, timeout, "Supervisor.Setargs", os.Args, nil); err != nil {
 		return err
 	}
 	const floor = 100 << 10 // bps
 	uploadTimeout := time.Duration((binInfo.Size+floor-1)/floor) * time.Second
 	log.Debug.Printf("exec: upload timeout: %v", uploadTimeout)
-	if err := m.timeoutCall(ctx, timeout, "Supervisor.Keepalive", uploadTimeout, nil); err != nil {
+	if err = m.timeoutCall(ctx, timeout, "Supervisor.Keepalive", uploadTimeout, nil); err != nil {
 		log.Error.Printf("Keepalive %v: %v", m.Addr, err)
 	}
 
@@ -665,10 +665,10 @@ func (m *Machine) Call(ctx context.Context, serviceMethod string, arg, reply int
 	for {
 		switch state := m.State(); state {
 		case Running:
-			ctx, cancel := m.context(ctx)
+			ctxCall, cancel := m.context(ctx)
 			defer cancel()
-			err := m.call(ctx, serviceMethod, arg, reply)
-			if err == nil || err != ctx.Err() || m.State() != Stopped {
+			err := m.call(ctxCall, serviceMethod, arg, reply)
+			if err == nil || err != ctxCall.Err() || m.State() != Stopped {
 				return err
 			}
 			fallthrough

@@ -42,7 +42,9 @@ func (s *TestService) ErrorError(ctx context.Context, err *errors.Error, reply *
 
 func TestServer(t *testing.T) {
 	srv := NewServer()
-	srv.Register("Test", new(TestService))
+	if err := srv.Register("Test", new(TestService)); err != nil {
+		t.Fatal(err)
+	}
 	httpsrv := httptest.NewServer(srv)
 	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
 	if err != nil {
@@ -51,7 +53,7 @@ func TestServer(t *testing.T) {
 	ctx := context.Background()
 
 	var reply string
-	if err := client.Call(ctx, httpsrv.URL, "Test.Echo", "hello world", &reply); err != nil {
+	if err = client.Call(ctx, httpsrv.URL, "Test.Echo", "hello world", &reply); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := reply, "hello world"; got != want {
@@ -72,7 +74,7 @@ func TestServer(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 	// Just test that nil replies just discard the result.
-	if err := client.Call(ctx, httpsrv.URL, "Test.Echo", "hello world", nil); err != nil {
+	if err = client.Call(ctx, httpsrv.URL, "Test.Echo", "hello world", nil); err != nil {
 		t.Error(err)
 	}
 	_, err = os.Open("/dev/notexist")
@@ -141,7 +143,9 @@ func (s *TestStreamService) Digest(ctx context.Context, arg io.Reader, reply *di
 
 func TestStream(t *testing.T) {
 	srv := NewServer()
-	srv.Register("Stream", new(TestStreamService))
+	if err := srv.Register("Stream", new(TestStreamService)); err != nil {
+		t.Fatal(err)
+	}
 	httpsrv := httptest.NewServer(srv)
 	client, err := NewClient(func() *http.Client { return httpsrv.Client() }, testPrefix)
 	if err != nil {
@@ -149,18 +153,18 @@ func TestStream(t *testing.T) {
 	}
 	ctx := context.Background()
 	b := make([]byte, 1024)
-	if _, err := rand.Read(b); err != nil {
+	if _, err = rand.Read(b); err != nil {
 		t.Fatal(err)
 	}
 	var rc io.ReadCloser
-	if err := client.Call(ctx, httpsrv.URL, "Stream.Echo", bytes.NewReader(b), &rc); err != nil {
+	if err = client.Call(ctx, httpsrv.URL, "Stream.Echo", bytes.NewReader(b), &rc); err != nil {
 		t.Fatal(err)
 	}
 	c, err := ioutil.ReadAll(rc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rc.Close(); err != nil {
+	if err = rc.Close(); err != nil {
 		t.Error(err)
 	}
 	if !bytes.Equal(b, c) {
@@ -168,7 +172,7 @@ func TestStream(t *testing.T) {
 	}
 
 	// Make sure errors are propagated (both ways).
-	if err := client.Call(ctx, httpsrv.URL, "Stream.StreamWithError", "a series of unfortunate events", &rc); err != nil {
+	if err = client.Call(ctx, httpsrv.URL, "Stream.StreamWithError", "a series of unfortunate events", &rc); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = io.Copy(ioutil.Discard, rc); err == nil || !strings.Contains(err.Error(), "a series of unfortunate events") {
@@ -177,7 +181,7 @@ func TestStream(t *testing.T) {
 	rc.Close()
 
 	var d digest.Digest
-	if err := client.Call(ctx, httpsrv.URL, "Stream.Digest", bytes.NewReader(b), &d); err != nil {
+	if err = client.Call(ctx, httpsrv.URL, "Stream.Digest", bytes.NewReader(b), &d); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := d, digester.FromBytes(b); got != want {
@@ -185,7 +189,7 @@ func TestStream(t *testing.T) {
 	}
 
 	n := 32 << 20
-	if err := client.Call(ctx, httpsrv.URL, "Stream.Gimme", n, &rc); err != nil {
+	if err = client.Call(ctx, httpsrv.URL, "Stream.Gimme", n, &rc); err != nil {
 		t.Fatal(err)
 	}
 	m, err := io.Copy(ioutil.Discard, rc)
