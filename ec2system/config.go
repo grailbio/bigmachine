@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/grailbio/base/config"
+	"github.com/grailbio/base/errors"
 )
 
 // Defaults for the ec2boot binary. These are used when the "binary" value is empty.
@@ -53,6 +54,8 @@ func init() {
 				system.Flavor = CoreOS
 			case *flavor == "ubuntu":
 				system.Flavor = Ubuntu
+			default:
+				return nil, errors.E(errors.Invalid, "flavor must be one of {coreos, ubuntu}: ", *flavor)
 			}
 			system.Diskspace = uint(*diskspace)
 			system.Dataspace = uint(*dataspace)
