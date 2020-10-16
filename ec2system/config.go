@@ -29,6 +29,8 @@ func init() {
 		constr.StringVar(&system.InstanceType, "instance", "m3.medium", "instance type to allocate")
 		// Flatcar-stable-2512.2.1-hvm
 		constr.StringVar(&system.AMI, "ami", "ami-0bb54692374ac10a7", "AMI to bootstrap")
+
+		flavor := constr.String("flavor", "coreos", "one of {coreos, ubuntu}")
 		constr.StringVar(&system.InstanceProfile, "instance-profile", "",
 			"the instance profile with which to launch new instances")
 		constr.StringVar(&system.SecurityGroup, "security-group", "",
@@ -46,6 +48,12 @@ func init() {
 		constr.InstanceVar(&sess, "aws", "aws", "AWS configuration for all EC2 calls")
 		constr.Doc = "bigmachine/ec2system configures the default instances settings used for bigmachine's ec2 backend"
 		constr.New = func() (interface{}, error) {
+			switch {
+			case *flavor == "coreos":
+				system.Flavor = CoreOS
+			case *flavor == "ubuntu":
+				system.Flavor = Ubuntu
+			}
 			system.Diskspace = uint(*diskspace)
 			system.Dataspace = uint(*dataspace)
 			system.SshKeys = strings.Split(*sshkeys, ",")
