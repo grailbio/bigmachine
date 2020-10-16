@@ -134,10 +134,14 @@ var Instance = new(System)
 type Flavor int
 
 const (
-	// CoreOS indicates that the AMI is based on CoreOS.
+	// CoreOS (DEPRECATED) indicates that the AMI is based on CoreOS. CoreOS is
+	// EOL. You probably want to use Flatcar instead, which should be a drop-in
+	// replacement. See https://coreos.com/os/eol/ .
 	CoreOS Flavor = iota
 	// Ubuntu indicates that the AMI is based on Ubuntu.
 	Ubuntu
+	// Flatcar indicates that the AMI is based on Flatcar.
+	Flatcar
 )
 
 // System implements a bigmachine system for EC2 instances.
@@ -151,7 +155,7 @@ type System struct {
 	InstanceType string
 
 	// AMI is the AMI used to boot instances with. The AMI must support
-	// cloud config and use systemd. The default AMI is a recent stable CoreOS
+	// cloud config and use systemd. The default AMI is a recent stable Flatcar
 	// build.
 	AMI string
 
@@ -668,7 +672,7 @@ func (s *System) cloudConfig() *cloudConfig {
 	c.SshAuthorizedKeys = s.SshKeys
 	c.Flavor = s.Flavor
 
-	if s.Flavor == CoreOS {
+	if s.Flavor == CoreOS || s.Flavor == Flatcar {
 		// Turn off rebooting, updating, and locksmithd, all of which can
 		// cause the instance to reboot. These are ephemeral instances and
 		// we're not interested in these updates. (The AMI should be kept up to
@@ -832,7 +836,7 @@ func (s *System) cloudConfig() *cloudConfig {
 	})
 
 	sysctlPath := "/lib/systemd/systemd-sysctl"
-	if s.Flavor == CoreOS {
+	if s.Flavor == CoreOS || s.Flavor == Flatcar {
 		sysctlPath = "/usr/lib/systemd/systemd-sysctl"
 	}
 	c.AppendUnit(CloudUnit{
@@ -1012,6 +1016,8 @@ func (s *System) dialSSH(addr string) (*ssh.Client, error) {
 		Timeout:         5 * time.Second,
 	}
 	switch s.Flavor {
+	case Flatcar:
+		fallthrough
 	case CoreOS:
 		config.User = "core"
 	case Ubuntu:
