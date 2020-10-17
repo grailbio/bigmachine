@@ -11,7 +11,7 @@ import (
 
 func TestCloudconfig(t *testing.T) {
 	var c cloudConfig
-	c.Flavor = CoreOS
+	c.Flavor = Flatcar
 	c.CoreOS.Update.RebootStrategy = "off"
 	c.AppendFile(CloudFile{"/tmp/x", "0644", "root", "a test file"})
 	c.AppendUnit(CloudUnit{Name: "reflowlet", Command: "command", Enable: true, Content: "unit content"})
