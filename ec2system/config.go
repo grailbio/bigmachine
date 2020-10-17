@@ -31,7 +31,7 @@ func init() {
 		// Flatcar-stable-2512.2.1-hvm
 		constr.StringVar(&system.AMI, "ami", "ami-0bb54692374ac10a7", "AMI to bootstrap")
 
-		flavor := constr.String("flavor", "coreos", "one of {coreos, ubuntu}")
+		flavor := constr.String("flavor", "flatcar", "one of {flatcar, ubuntu}")
 		constr.StringVar(&system.InstanceProfile, "instance-profile", "",
 			"the instance profile with which to launch new instances")
 		constr.StringVar(&system.SecurityGroup, "security-group", "",
@@ -50,12 +50,12 @@ func init() {
 		constr.Doc = "bigmachine/ec2system configures the default instances settings used for bigmachine's ec2 backend"
 		constr.New = func() (interface{}, error) {
 			switch {
-			case *flavor == "coreos":
-				system.Flavor = CoreOS
+			case *flavor == "flatcar":
+				system.Flavor = Flatcar
 			case *flavor == "ubuntu":
 				system.Flavor = Ubuntu
 			default:
-				return nil, errors.E(errors.Invalid, "flavor must be one of {coreos, ubuntu}: ", *flavor)
+				return nil, errors.E(errors.Invalid, "flavor must be one of {flatcar, ubuntu}: ", *flavor)
 			}
 			system.Diskspace = uint(*diskspace)
 			system.Dataspace = uint(*dataspace)
