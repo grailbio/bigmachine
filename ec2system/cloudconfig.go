@@ -95,7 +95,7 @@ func (c *cloudConfig) AppendMount(mount []string) {
 // cloud-config header.
 func (c *cloudConfig) Marshal() ([]byte, error) {
 	copy := *c
-	if c.Flavor == CoreOS {
+	if c.Flavor == Flatcar {
 		copy.CoreOS.Units = c.units
 	} else {
 		if len(c.units) > 0 {
