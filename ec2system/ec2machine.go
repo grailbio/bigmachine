@@ -382,13 +382,13 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			return err2
 		}
 		if len(out.Images) != 1 || aws.StringValue(out.Images[0].ImageId) != s.AMI {
-			return errors.New("image not found")
+			return errors.E(errors.Fatal, "image not found")
 		}
 		imageInfo.Store(s.AMI, out.Images[0])
 		return nil
 	})
 	if err != nil {
-		if err == ctx.Err() {
+		if e, ok := err.(*errors.Error); ok && e.Severity != errors.Fatal {
 			describeImages.Forget(s.AMI)
 		}
 		return nil, errors.E("describe-images", s.AMI, err)
