@@ -641,6 +641,9 @@ func (m *Machine) retryCall(ctx context.Context, overallTimeout, rpcTimeout time
 			}
 			return nil
 		}
+		if errors.Match(errors.E(errors.Fatal), err) {
+			return errors.E("fatal error calling", serviceMethod, err)
+		}
 		log.Debug.Printf("%s %s: %v; retrying (%d)", m.Addr, serviceMethod, err, retries)
 		// TODO(marius): this isn't quite right. Introduce an errors package
 		// similar to Reflow's here to categorize errors properly.
@@ -673,10 +676,11 @@ func (m *Machine) Call(ctx context.Context, serviceMethod string, arg, reply int
 			}
 			fallthrough
 		case Stopped:
+			msg := fmt.Sprintf("machine %s stopped", m.Addr)
 			if err := m.Err(); err != nil {
-				return errors.E(errors.Fatal, errors.Unavailable, err)
+				return errors.E(errors.Fatal, errors.Unavailable, msg, err)
 			}
-			return errors.E(errors.Fatal, errors.Unavailable, fmt.Sprintf("machine %s stopped", m.Addr))
+			return errors.E(errors.Fatal, errors.Unavailable, msg)
 		default:
 			select {
 			case <-ctx.Done():
