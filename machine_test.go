@@ -206,9 +206,10 @@ func TestBadServiceFastFail(t *testing.T) {
 	m, _, shutdown := newTestMachine(t, Services{"GobUnregistered": gobUnregisteredService{}})
 	defer shutdown()
 	select {
-	case <-m.Wait(Stopped):
 	case <-m.Wait(Running):
-		t.Fatalf("machine is running with broken service")
+		if m.State() == Running {
+			t.Fatalf("machine is running with broken service")
+		}
 	case <-time.After(2 * time.Minute):
 		// If our test environment causes this to falsely fail, we almost
 		// surely have lots of other problems, as this should otherwise fail
