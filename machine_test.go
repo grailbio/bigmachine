@@ -197,7 +197,7 @@ func TestMachineContext(t *testing.T) {
 }
 
 // gobUnregisteredService is a service that is not registered with gob, so
-// attempts to register it will fail.
+// attempts to register it with bigmachine will fail.
 type gobUnregisteredService struct{}
 
 // TestBadServiceFastFail verifies that we fail fast when a service is not
