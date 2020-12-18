@@ -91,6 +91,10 @@ func (s *fakeSupervisor) Hang(ctx context.Context, _ struct{}, _ *struct{}) erro
 	return ctx.Err()
 }
 
+func (s *fakeSupervisor) Register(ctx context.Context, _ service, _ *struct{}) error {
+	// Tests expect that all registrations succeeed.
+	return nil
+}
 func newTestMachine(t *testing.T, params ...Param) (m *Machine, supervisor *fakeSupervisor, shutdown func()) {
 	t.Helper()
 	supervisor = new(fakeSupervisor)
@@ -189,5 +193,26 @@ func TestMachineContext(t *testing.T) {
 	err := m.Call(ctx, "Supervisor.Hang", struct{}{}, nil)
 	if got, want := err, context.Canceled; got != want {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// gobUnregisteredService is a service that is not registered with gob, so
+// attempts to register it will fail.
+type gobUnregisteredService struct{}
+
+// TestBadServiceFastFail verifies that we fail fast when a service is not
+// gob-encodable.
+func TestBadServiceFastFail(t *testing.T) {
+	m, _, shutdown := newTestMachine(t, Services{"GobUnregistered": gobUnregisteredService{}})
+	defer shutdown()
+	select {
+	case <-m.Wait(Stopped):
+	case <-m.Wait(Running):
+		t.Fatalf("machine is running with broken service")
+	case <-time.After(2 * time.Minute):
+		// If our test environment causes this to falsely fail, we almost
+		// surely have lots of other problems, as this should otherwise fail
+		// almost instantly.
+		t.Fatalf("took too long to fail")
 	}
 }
