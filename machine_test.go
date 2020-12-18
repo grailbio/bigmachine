@@ -7,6 +7,7 @@ package bigmachine
 import (
 	"bytes"
 	"context"
+	"encoding/gob"
 	"io"
 	"io/ioutil"
 	"log"
@@ -91,10 +92,12 @@ func (s *fakeSupervisor) Hang(ctx context.Context, _ struct{}, _ *struct{}) erro
 	return ctx.Err()
 }
 
-func (s *fakeSupervisor) Register(ctx context.Context, _ service, _ *struct{}) error {
-	// Tests expect that all registrations succeeed.
-	return nil
+func (s *fakeSupervisor) Register(ctx context.Context, svc service, _ *struct{}) error {
+	// Tests only require that we Init services (if needed), so we don't do any
+	// actual registration.
+	return maybeInit(svc.Instance, nil)
 }
+
 func newTestMachine(t *testing.T, params ...Param) (m *Machine, supervisor *fakeSupervisor, shutdown func()) {
 	t.Helper()
 	supervisor = new(fakeSupervisor)
@@ -196,14 +199,44 @@ func TestMachineContext(t *testing.T) {
 	}
 }
 
-// gobUnregisteredService is a service that is not registered with gob, so
-// attempts to register it with bigmachine will fail.
-type gobUnregisteredService struct{}
+// serviceGobUnregistered is a service that is not registered with gob, so
+// attempts to register it will fail.
+type serviceGobUnregistered struct{}
 
-// TestBadServiceFastFail verifies that we fail fast when a service is not
-// gob-encodable.
-func TestBadServiceFastFail(t *testing.T) {
-	m, _, shutdown := newTestMachine(t, Services{"GobUnregistered": gobUnregisteredService{}})
+// TestServiceGobUnregisteredFastFail verifies that we fail fast when a service
+// is not gob-encodable.
+func TestServiceGobUnregisteredFastFail(t *testing.T) {
+	m, _, shutdown := newTestMachine(t, Services{"GobUnregistered": serviceGobUnregistered{}})
+	defer shutdown()
+	select {
+	case <-m.Wait(Running):
+		if m.State() == Running {
+			t.Fatalf("machine is running with broken service")
+		}
+	case <-time.After(2 * time.Minute):
+		// If our test environment causes this to falsely fail, we almost
+		// surely have lots of other problems, as this should otherwise fail
+		// almost instantly.
+		t.Fatalf("took too long to fail")
+	}
+}
+
+// serviceInitPanic is a service that panics in Init, indicating that the
+// service is fatally broken.
+type serviceInitPanic struct{}
+
+func (serviceInitPanic) Init(b *B) error {
+	panic("")
+}
+
+func init() {
+	gob.Register(serviceInitPanic{})
+}
+
+// TestBadServiceFastFail verifies that we fail fast when a service panics in
+// its Init.
+func TestServiceInitPanicFastFail(t *testing.T) {
+	m, _, shutdown := newTestMachine(t, Services{"InitPanic": serviceInitPanic{}})
 	defer shutdown()
 	select {
 	case <-m.Wait(Running):
