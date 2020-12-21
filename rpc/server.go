@@ -257,7 +257,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if e := recover(); e != nil {
 				log.Error.Printf("panic in method call %s.%s\n%s", service, method, string(debug.Stack()))
-				err = fmt.Errorf("panic: %v", e)
+				err = errors.E(errors.Fatal, fmt.Errorf("panic: %v", e))
 			}
 		}()
 		rvs := m.method.Func.Call([]reflect.Value{svc.recv, reflect.ValueOf(ctx), argv, replyv})
