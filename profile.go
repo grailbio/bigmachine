@@ -6,6 +6,7 @@ package bigmachine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,7 +51,7 @@ func (h *profileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := p.Marshal(r.Context(), w)
 	if err != nil {
 		code := http.StatusInternalServerError
-		if _, ok := err.(errNoProfiles); ok {
+		if err == errNoProfiles {
 			code = http.StatusNotFound
 		}
 		profileErrorf(w, code, err.Error())
@@ -94,15 +95,11 @@ type profiler struct {
 	gc bool
 }
 
-// errNoProfiles is a marker type for the error that is returned by
-// (profiler).Marshal when there are no profiles from the cluster machines. We
-// use this to signal that we want to return a StatusNotFound when we are
-// writing the profile in an HTTP response.
-type errNoProfiles string
-
-func (e errNoProfiles) Error() string {
-	return string(e)
-}
+// errNoProfiles is the error that is returned by (profiler).Marshal when there
+// are no profiles from the cluster machines. We use this to signal that we
+// want to return a StatusNotFound when we are writing the profile in an HTTP
+// response.
+var errNoProfiles = errors.New("no profiles are available at this time")
 
 // ContentType returns the expected content type, assuming success, of a call
 // to Marshal. This is used to set the Content-Type header when we are writing
@@ -182,7 +179,7 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 		return fmt.Errorf("failed to fetch profiles: %v", err)
 	}
 	if len(profiles) == 0 {
-		return errNoProfiles("no profiles are available at this time")
+		return errNoProfiles
 	}
 	// Debug output is intended for human consumption.
 	if p.debug > 0 && p.which != "profiles" {
@@ -234,6 +231,10 @@ func makeProfileDumpFunc(b *B, which string, debug int) dump.Func {
 		gc:    false,
 	}
 	return func(ctx context.Context, w io.Writer) error {
-		return p.Marshal(ctx, w)
+		err := p.Marshal(ctx, w)
+		if err == errNoProfiles {
+			return dump.ErrSkipPart
+		}
+		return err
 	}
 }
