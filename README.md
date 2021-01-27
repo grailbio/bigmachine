@@ -25,7 +25,7 @@ other systems may be implemented with a [relatively compact Go interface](https:
 
 - API documentation: [godoc.org/github.com/grailbio/bigmachine](https://godoc.org/github.com/grailbio/bigmachine)
 - Issue tracker: [github.com/grailbio/bigmachine/issues](https://github.com/grailbio/bigmachine/issues)
-- ![CI](https://github.com/grailbio/bigmachine/workflows/CI/badge.svg)
+- [![CI](https://github.com/grailbio/bigmachine/workflows/CI/badge.svg)](https://github.com/grailbio/bigmachine/actions?query=workflow%3ACI)
 - Implementation notes: [github.com/grailbio/bigmachine/blob/master/docs/impl.md](https://github.com/grailbio/bigmachine/blob/master/docs/impl.md)
 
 Help wanted!
