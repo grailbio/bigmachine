@@ -73,6 +73,9 @@ linters-settings:
   unused:
     # do not report unused exported identifiers
     check-exported: false
+  
+  misspell:
+    locale: US
 
 linters:
   disable-all: true
@@ -84,6 +87,7 @@ linters:
     - govet
     - errcheck
     - ineffassign
+    - misspell
     - staticcheck
     - structcheck
     - typecheck
