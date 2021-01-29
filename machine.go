@@ -335,6 +335,10 @@ func (m *Machine) setState(s State) {
 func (m *Machine) loop(ctx context.Context, system System) {
 	start := time.Now()
 	m.setState(Starting)
+	// If tailPrint > 0, logs tailed from the machine will be printed to
+	// stderr. We use this to elide boot logs unless we're at log.Debug. Access
+	// it atomically.
+	var tailPrint uint32
 	if m.owner {
 		m.event("bigmachine:machineAlive",
 			"addr", m.Addr,
@@ -353,6 +357,11 @@ func (m *Machine) loop(ctx context.Context, system System) {
 				if err != nil {
 					return
 				}
+				// At the Debug log level, start printing immediately so that
+				// boot and exec logs are printed.
+				if log.At(log.Debug) {
+					atomic.StoreUint32(&tailPrint, 1)
+				}
 				w := iofmt.PrefixWriter(os.Stderr, m.Addr+": ")
 				// Scan the log output for the sync marker or an error.
 				sc := bufio.NewScanner(r)
@@ -360,6 +369,9 @@ func (m *Machine) loop(ctx context.Context, system System) {
 					line := sc.Bytes()
 					if bytes.HasSuffix(line, logSyncMarker) {
 						break
+					}
+					if atomic.LoadUint32(&tailPrint) == 0 {
+						continue
 					}
 					if _, err = w.Write(append(line, '\n')); err != nil {
 						return
@@ -428,6 +440,9 @@ func (m *Machine) loop(ctx context.Context, system System) {
 			return
 		}
 	}
+
+	// We are past the noisy boot logs.
+	atomic.StoreUint32(&tailPrint, 1)
 
 	if system != nil {
 		// Note that this means that OOMs are detected only by the owner
