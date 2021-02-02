@@ -99,7 +99,7 @@ func (c *Client) updateClientState(h *clientState, err error, serviceMethod stri
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err != nil && c.clients[h.addr] == h {
-		log.Outputf(c.getLogger(h.addr), log.Error, "resetting http client %s while calling to %s: %s", h.addr, serviceMethod, err.Error())
+		log.Outputf(c.getLogger(h.addr), log.Debug, "resetting http client %s while calling to %s: %s", h.addr, serviceMethod, err.Error())
 		delete(c.clients, h.addr)
 	}
 	if c.clients[h.addr] != h {

@@ -652,7 +652,7 @@ func (m *Machine) retryCall(ctx context.Context, overallTimeout, rpcTimeout time
 		cancel()
 		if err == nil {
 			if retries > 0 {
-				log.Printf("%s %s: succeeded after %d retries", m.Addr, serviceMethod, retries)
+				log.Debug.Printf("%s %s: succeeded after %d retries", m.Addr, serviceMethod, retries)
 			}
 			return nil
 		}

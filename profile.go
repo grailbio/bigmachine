@@ -117,11 +117,11 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 	if p.addr != "" {
 		var m *Machine
 		if m, err = p.b.Dial(ctx, p.addr); err != nil {
-			return fmt.Errorf("failed to dial machine: %v", err)
+			return fmt.Errorf("dialing machine: %v", err)
 		}
 		var rc io.ReadCloser
 		if rc, err = getProfile(ctx, m, p.which, p.sec, p.debug, p.gc); err != nil {
-			return fmt.Errorf("failed to collect %s profile: %v", p.which, err)
+			return fmt.Errorf("collecting %s profile: %v", p.which, err)
 		}
 		defer func() {
 			cerr := rc.Close()
@@ -131,7 +131,7 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 		}()
 		_, err = io.Copy(w, rc)
 		if err != nil {
-			return fmt.Errorf("failed to write %s profile: %v", p.which, err)
+			return fmt.Errorf("writing %s profile: %v", p.which, err)
 		}
 		return nil
 	}
@@ -149,12 +149,12 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 		g.Go(func() (err error) {
 			rc, err := getProfile(ctx, m, p.which, p.sec, p.debug, p.gc)
 			if err != nil {
-				log.Error.Printf("failed to collect profile %s from %s: %v", p.which, m.Addr, err)
+				log.Printf("collecting %s from %s: %v", p.which, m.Addr, err)
 				return nil
 			}
 			prof, err := filebuf.New(rc)
 			if err != nil {
-				log.Error.Printf("failed to read profile from %s: %v", m.Addr, err)
+				log.Printf("reading profile from %s: %v", m.Addr, err)
 				return nil
 			}
 			mu.Lock()
@@ -176,7 +176,7 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 		}
 	}()
 	if err = g.Wait(); err != nil {
-		return fmt.Errorf("failed to fetch profiles: %v", err)
+		return fmt.Errorf("fetching profiles: %v", err)
 	}
 	if len(profiles) == 0 {
 		return errNoProfiles
@@ -194,7 +194,7 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 			_ = prof.Close()
 			profiles[m] = nil
 			if err != nil {
-				return fmt.Errorf("failed to append profile from %s: %v", m.Addr, err)
+				return fmt.Errorf("appending profile from %s: %v", m.Addr, err)
 			}
 			fmt.Fprintln(w)
 		}
@@ -208,16 +208,16 @@ func (p profiler) Marshal(ctx context.Context, w io.Writer) (err error) {
 		_ = rc.Close()
 		profiles[m] = nil
 		if err != nil {
-			return fmt.Errorf("failed to parse profile from %s: %v", m.Addr, err)
+			return fmt.Errorf("parsing profile from %s: %v", m.Addr, err)
 		}
 		parsed = append(parsed, prof)
 	}
 	prof, err := profile.Merge(parsed)
 	if err != nil {
-		return fmt.Errorf("profile merge error: %v", err)
+		return fmt.Errorf("merging profiles: %v", err)
 	}
 	if err := prof.Write(w); err != nil {
-		return fmt.Errorf("failed to write profile: %v", err)
+		return fmt.Errorf("writing profile: %v", err)
 	}
 	return nil
 }

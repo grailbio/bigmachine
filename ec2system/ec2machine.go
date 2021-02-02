@@ -35,6 +35,7 @@ import (
 	"html/template"
 	"io"
 	"io/ioutil"
+	golog "log"
 	"net"
 	"net/http"
 	"net/url"
@@ -965,10 +966,16 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 		handler = http.StripPrefix("/"+doc.InstanceID, handler)
 	}
 	config.ClientAuth = tls.RequireAndVerifyClientCert
+	// Only log server errors if we're at log.Debug.
+	var serverErrorLog *golog.Logger
+	if !log.At(log.Debug) {
+		serverErrorLog = golog.New(ioutil.Discard, "", 0)
+	}
 	server := &http.Server{
 		TLSConfig: config,
 		Addr:      addr,
 		Handler:   handler,
+		ErrorLog:  serverErrorLog,
 	}
 	err = http2.ConfigureServer(server, &http2.Server{
 		MaxConcurrentStreams: maxConcurrentStreams,
@@ -1036,16 +1043,20 @@ func (s *System) run(ctx context.Context, addr string, command string) io.Reader
 			if err == nil {
 				break
 			}
-			log.Error.Printf("tail %v: %v", addr, err)
 			if strings.HasPrefix(err.Error(), "ssh: unable to authenticate") {
 				break
 			}
 			if _, ok := err.(*ssh.ExitError); ok {
 				break
 			}
-			if err = retry.Wait(ctx, sshRetryPolicy, retries); err != nil {
+			if errRetry := retry.Wait(ctx, sshRetryPolicy, retries); errRetry != nil {
+				err = errRetry
 				break
 			}
+			log.Debug.Printf("tail %v: %v; retrying", addr, err)
+		}
+		if err != nil {
+			log.Error.Printf("tail %v: %v", addr, err)
 		}
 		w.CloseWithError(err)
 	}()
