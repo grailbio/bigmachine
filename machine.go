@@ -141,6 +141,10 @@ type Machine struct {
 	// process.
 	environ []string
 
+	// exe is the executable to exec on machine startup.
+	// If nil, use defaultMachineExe.
+	exe MachineExe
+
 	owner bool
 
 	client *rpc.Client
@@ -266,6 +270,9 @@ func (m *Machine) Err() error {
 }
 
 func (m *Machine) start(b *B) {
+	if m.exe == nil {
+		m.exe = defaultMachineExe
+	}
 	if m.client == nil {
 		m.client = b.client
 	}
@@ -391,7 +398,7 @@ func (m *Machine) loop(ctx context.Context, system System) {
 				return
 			}
 
-			// Exec the current binary onto the machine. This will make the
+			// Exec the remote binary on the machine. This will make the
 			// machine unresponsive, because it will not have a chance to reply
 			// to the exec call.
 			err := m.exec(ctx)
@@ -566,14 +573,23 @@ func (m *Machine) context(ctx context.Context) (mctx context.Context, cancel fun
 	}
 }
 
+// defaultMachineExe is a MachineExe that uses fatbin.Self().
+func defaultMachineExe(goos, goarch string) (_ io.ReadCloser, size int64, _ error) {
+	self, err := fatbin.Self()
+	if err != nil {
+		return nil, 0, err
+	}
+	info, ok := self.Stat(goos, goarch)
+	if !ok {
+		return nil, 0, errors.E(errors.Fatal, "no image for "+goos+"/"+goarch)
+	}
+	rc, err := self.Open(goos, goarch)
+	return rc, info.Size, err
+}
+
 // Exec prepares the remote machine for binary replacement, and then
 // calls Supervisor.Exec.
 func (m *Machine) exec(ctx context.Context) error {
-	self, err := fatbin.Self()
-	if err != nil {
-		return err
-	}
-
 	// We first get the target GOOS/GOARCH so that we can
 	// compute the total time to allow for uploads, assuming
 	// at a minimum 100 kB/s upload bandwidth.
@@ -583,13 +599,14 @@ func (m *Machine) exec(ctx context.Context) error {
 	// the reader).
 	const timeout = 10 * time.Second
 	var info Info
-	if err = m.timeoutCall(ctx, timeout, "Supervisor.Info", struct{}{}, &info); err != nil {
+	if err := m.timeoutCall(ctx, timeout, "Supervisor.Info", struct{}{}, &info); err != nil {
 		return err
 	}
-	binInfo, ok := self.Stat(info.Goos, info.Goarch)
-	if !ok {
-		return errors.E(errors.Fatal, "no image for ", info.Goos, "/", info.Goarch)
+	exeRC, exeSize, err := m.exe(info.Goos, info.Goarch)
+	if err != nil {
+		return err
 	}
+	defer exeRC.Close()
 	if err = m.timeoutCall(ctx, timeout, "Supervisor.Setenv", m.environ, nil); err != nil {
 		return err
 	}
@@ -597,18 +614,12 @@ func (m *Machine) exec(ctx context.Context) error {
 		return err
 	}
 	const floor = 100 << 10 // bps
-	uploadTimeout := time.Duration((binInfo.Size+floor-1)/floor) * time.Second
+	uploadTimeout := time.Duration((exeSize+floor-1)/floor) * time.Second
 	log.Debug.Printf("exec: upload timeout: %v", uploadTimeout)
 	if err = m.timeoutCall(ctx, timeout, "Supervisor.Keepalive", uploadTimeout, nil); err != nil {
 		log.Error.Printf("Keepalive %v: %v", m.Addr, err)
 	}
-
-	rc, err := self.Open(info.Goos, info.Goarch)
-	if err != nil {
-		return err
-	}
-	defer rc.Close()
-	if err := m.call(ctx, "Supervisor.Setbinary", rc, nil); err != nil {
+	if err := m.call(ctx, "Supervisor.Setbinary", exeRC, nil); err != nil {
 		return err
 	}
 	return m.timeoutCall(ctx, timeout, "Supervisor.Exec", struct{}{}, nil)

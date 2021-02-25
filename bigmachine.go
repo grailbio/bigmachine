@@ -9,6 +9,7 @@ import (
 	"expvar"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -193,13 +194,13 @@ func (b *B) Dial(ctx context.Context, addr string) (*Machine, error) {
 	return m, nil
 }
 
-// A Param is a machine parameter. Parameters customize machines
-// before the are started.
+// Param is a machine parameter. Pass Params to (*B).Start() to customize
+// machines before they are started.
 type Param interface {
 	applyParam(*Machine)
 }
 
-// Services is a machine parameter that specifies the set of services
+// Services is a Param that specifies the set of services
 // that should be served by the machine. Each machine should have at
 // least one service. Multiple Services parameters may be passed.
 type Services map[string]interface{}
@@ -213,13 +214,21 @@ func (s Services) applyParam(m *Machine) {
 	}
 }
 
-// Environ is a machine parameter that amends the process environment
-// of the machine. It is a slice of strings in the form "key=value"; later
-// definitions override earlies ones.
+// Environ is a Param that amends the process environment of the machine.
+// It is a slice of strings in the form "key=value"; later definitions override
+// earlier ones.
 type Environ []string
 
 func (e Environ) applyParam(m *Machine) {
 	m.environ = append(m.environ, e...)
+}
+
+// MachineExe is a Param that overrides the default bootstrap process for
+// starting machines. If multiple MachineExes are given, only the last is used.
+type MachineExe func(goos, goarch string) (_ io.ReadCloser, size int64, _ error)
+
+func (r MachineExe) applyParam(m *Machine) {
+	m.exe = r
 }
 
 // Start launches up to n new machines and returns them. The machines are
