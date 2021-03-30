@@ -258,8 +258,16 @@ func (b *B) Start(ctx context.Context, n int, params ...Param) ([]*Machine, erro
 		}
 		m.owner = true
 		m.tailDone = make(chan struct{})
-		m.start(b)
 		b.machines[m.Addr] = m
+		m.start(b)
+		m := m
+		go func() {
+			<-m.Wait(Stopped)
+			log.Error.Printf("%s: machine stopped with error %s", m.Addr, m.Err())
+			b.mu.Lock()
+			delete(b.machines, m.Addr)
+			b.mu.Unlock()
+		}()
 	}
 	return machines, nil
 }
