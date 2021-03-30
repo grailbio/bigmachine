@@ -895,7 +895,7 @@ func (s *System) HTTPClient() *http.Client {
 			return
 		}
 		// Set up the TLS configuration for http/2. If we didn't do this,
-		// http.ConfigureTransport would. However, because we share the
+		// http2.ConfigureTransport would. However, because we share the
 		// configuration between Transports and HTTPClient can be called
 		// concurrently, we do it ourselves to avoid a data race. See:
 		// https://github.com/golang/net/blob/244492dfa37a/http2/transport.go#L154-L159
