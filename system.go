@@ -67,6 +67,11 @@ type System interface {
 	// on the host. This is done outside of the supervisor to support external
 	// monitoring of the host.
 	Read(ctx context.Context, m *Machine, filename string) (io.Reader, error)
+	// KeepaliveFailed notifies the system of a failed call to
+	// Supervisor.Keepalive. This might be an intermittent failure that will be
+	// retried. The system can use this notification as a hint to otherwise
+	// probe machine health.
+	KeepaliveFailed(ctx context.Context, m *Machine)
 }
 
 var (

@@ -339,6 +339,29 @@ func (m *Machine) setState(s State) {
 	}
 }
 
+// Shutdown makes a best effort to shut down m. Unlike Cancel, which cancels
+// pending operations, puts m in the Stopped state, and relies on the machine
+// to clean itself up, Shutdown attempts to actively free the resources backing
+// m and synchronously waits for log propagation.
+func (m *Machine) Shutdown(ctx context.Context) {
+	err := m.Call(ctx, "Supervisor.Shutdown",
+		shutdownRequest{
+			Delay:   1 * time.Second,
+			Message: string(logSyncMarker),
+		},
+		nil)
+	if err != nil {
+		log.Error.Printf("failed to invoke Supervisor.Shutdown on %v: %v\n",
+			m.Addr, err)
+	}
+	// Wait for the logs to propagate or for a timeout to occur.
+	select {
+	case <-m.tailDone:
+	case <-ctx.Done():
+		log.Error.Printf("waiting for log to propagate: %v: %v", m.Addr, ctx.Err())
+	}
+}
+
 func (m *Machine) loop(ctx context.Context, system System) {
 	start := time.Now()
 	m.setState(Starting)
@@ -468,7 +491,7 @@ func (m *Machine) loop(ctx context.Context, system System) {
 	for {
 		callStart := time.Now()
 		var reply keepaliveReply
-		err := m.retryCall(ctx, m.keepaliveTimeout, m.keepaliveRpcTimeout, "Supervisor.Keepalive", keepalive, &reply)
+		err := m.callKeepalive(ctx, system, keepalive, &reply)
 		if err != nil {
 			m.errorf("keepalive failed after %s (timeout=%s, rpc timeout=%s): %v",
 				time.Since(callStart), m.keepaliveTimeout, m.keepaliveRpcTimeout, err)
@@ -675,6 +698,48 @@ func (m *Machine) retryCall(ctx context.Context, overallTimeout, rpcTimeout time
 		// similar to Reflow's here to categorize errors properly.
 		if _, ok := err.(net.Error); !ok {
 			log.Error.Printf("%s %s(%v): %v", m.Addr, serviceMethod, arg, err)
+		}
+		if err := retry.Wait(retryCtx, retryPolicy, retries); err != nil {
+			// Change the severity from temporary -> fatal.
+			return errors.E(errors.Fatal, err)
+		}
+	}
+}
+
+// callKeepalive calls Supervisor.Keepalive, notifying the underlying system
+// using KeepaliveFailed on (possibly transient) failures.
+func (m *Machine) callKeepalive(
+	ctx context.Context,
+	system System,
+	keepalive time.Duration,
+	reply *keepaliveReply,
+) error {
+	const serviceMethod = "Supervisor.Keepalive"
+	arg := keepalive
+	retryCtx, cancel := context.WithTimeout(ctx, m.keepaliveTimeout)
+	defer cancel()
+	var err error
+	for retries := 0; ; retries++ {
+		rpcCtx, cancel := context.WithTimeout(ctx, m.keepaliveRpcTimeout)
+		err = m.call(rpcCtx, serviceMethod, arg, reply)
+		cancel()
+		if err == nil {
+			if retries > 0 {
+				log.Debug.Printf("%s %s: succeeded after %d retries", m.Addr, serviceMethod, retries)
+			}
+			return nil
+		}
+		if errors.Match(errors.E(errors.Fatal), err) {
+			return errors.E("fatal error calling", serviceMethod, err)
+		}
+		log.Debug.Printf("%s %s: %v; retrying (%d)", m.Addr, serviceMethod, err, retries)
+		// TODO(marius): this isn't quite right. Introduce an errors package
+		// similar to Reflow's here to categorize errors properly.
+		if _, ok := err.(net.Error); !ok {
+			log.Error.Printf("%s %s(%v): %v", m.Addr, serviceMethod, arg, err)
+		}
+		if system != nil {
+			system.KeepaliveFailed(ctx, m)
 		}
 		if err := retry.Wait(retryCtx, retryPolicy, retries); err != nil {
 			// Change the severity from temporary -> fatal.

@@ -224,6 +224,8 @@ func (s *localSystem) Read(ctx context.Context, m *Machine, filename string) (io
 	return bigioutil.NewClosingReader(f), nil
 }
 
+func (*localSystem) KeepaliveFailed(context.Context, *Machine) {}
+
 func getFreeTCPPort() (int, error) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {

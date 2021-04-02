@@ -56,12 +56,12 @@ import (
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/eventlog"
 	"github.com/grailbio/base/fatbin"
-	"github.com/grailbio/base/limitbuf"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/retry"
 	"github.com/grailbio/base/sync/once"
 	"github.com/grailbio/bigmachine"
 	"github.com/grailbio/bigmachine/ec2system/instances"
+	"github.com/grailbio/bigmachine/ec2system/internal/monitor"
 	"github.com/grailbio/bigmachine/internal/authority"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -236,6 +236,10 @@ type System struct {
 
 	clientOnce   once.Task
 	clientConfig *tls.Config
+
+	// monitor monitors the instances started by this system and helps machines
+	// stop faster upon termination.
+	monitor *monitor.T
 }
 
 // Name returns the name of this system ("ec2").
@@ -338,6 +342,7 @@ func (s *System) Init(b *bigmachine.B) error {
 	if err != nil {
 		return err
 	}
+	s.monitor = monitor.Start(s.ec2, limiter)
 	return err
 }
 
@@ -633,6 +638,7 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			"addr", machines[i].Addr,
 			"instanceID", instance.InstanceId)
 		machines[i].Maxprocs = int(s.config.VCPU)
+		s.monitor.Started(aws.StringValue(instance.InstanceId), machines[i])
 	}
 	return machines, nil
 }
@@ -821,9 +827,7 @@ func (s *System) cloudConfig() *cloudConfig {
 			export BIGMACHINE_MODE=machine
 			export BIGMACHINE_SYSTEM=ec2
 			export BIGMACHINE_ADDR=:{{443}}
-			$bin -log=debug || true
-			sleep 30
-			exit 1
+			$bin -log=debug
 		`, args{"binary": s.Binary}),
 	})
 	c.AppendFile(CloudFile{
@@ -868,17 +872,21 @@ func (s *System) cloudConfig() *cloudConfig {
 			After=mnt-data.mount
 			Requires=mnt-data.mount
 			{{end}}
-			{{if .mortal}}
-			OnFailure=poweroff.target
-			OnFailureJobMode=replace-irreversibly
-			{{end}}
 			[Service]
 			OOMScoreAdjust=1000
-			Type=oneshot
 			LimitNOFILE={{.nropen}}
 			{{.environ}}
 			ExecStart=/opt/bin/bootmachine
-		`, args{"mortal": !*immortal, "environ": environ, "nropen": nropen, "data": dataDeviceName != ""}),
+			{{if .mortal}}
+			ExecStopPost=/bin/sleep 30
+			ExecStopPost=/bin/systemctl poweroff
+			{{end}}
+		`, args{
+			"mortal":  !*immortal,
+			"environ": environ,
+			"nropen":  nropen,
+			"data":    dataDeviceName != "",
+		}),
 	})
 	return c
 }
@@ -924,9 +932,6 @@ func (s *System) HTTPClient() *http.Client {
 // from the same system instance. Main also starts a local HTTP
 // server on port 3333 for debugging and local inspection.
 func (s *System) Main() error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go monitorSpotActions(ctx)
 	return http.ListenAndServe(":3333", nil)
 }
 
@@ -1007,6 +1012,10 @@ func (s *System) Read(ctx context.Context, m *bigmachine.Machine, filename strin
 	return s.run(ctx, u.Hostname(), "cat "+filename), nil
 }
 
+func (s *System) KeepaliveFailed(ctx context.Context, m *bigmachine.Machine) {
+	s.monitor.KeepaliveFailed(m)
+}
+
 func (s *System) dialSSH(addr string) (*ssh.Client, error) {
 	signer, err := ssh.NewSignerFromKey(s.privateKey)
 	if err != nil {
@@ -1079,11 +1088,13 @@ func (s *System) runSSH(addr string, w io.Writer, command string) error {
 	return sess.Run(command)
 }
 
-// Shutdown is a no-op.
+// Shutdown releases resources used by this system.
 //
 // TODO(marius): consider setting longer keepalives to maintain instances
 // for future invocations.
-func (s *System) Shutdown() {}
+func (s *System) Shutdown() {
+	s.monitor.Cancel()
+}
 
 // Maxprocs returns the number of VCPUs in the system's configuration.
 func (s *System) Maxprocs() int {
@@ -1095,45 +1106,6 @@ func (*System) KeepaliveConfig() (period, timeout, rpcTimeout time.Duration) {
 	timeout = 10 * time.Minute
 	rpcTimeout = 2 * time.Minute
 	return
-}
-
-// monitorSpotActions monitors spot instance actions and logs them. In
-// particular, this logs spot instance terminations to help users differentiate
-// spot instance terminations from other termination conditions (e.g. OOM
-// errors, panics, etc.).
-func monitorSpotActions(ctx context.Context) {
-	// We should get a spot instance termination notice two minutes before
-	// termination[0], so polling every thirty seconds should guarantee that we
-	// log it.
-	// [0] https://aws.amazon.com/blogs/aws/new-ec2-spot-instance-termination-notices/
-	tick := time.NewTicker(30 * time.Second)
-	for {
-		select {
-		case <-tick.C:
-		case <-ctx.Done():
-			return
-		}
-		resp, err := http.Get("http://169.254.169.254/latest/meta-data/spot/instance-action")
-		if err != nil {
-			continue
-		}
-		func() {
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				return
-			}
-			const maxBody = 512
-			// Truncate the body if necessary.
-			lb := limitbuf.NewLogger(512)
-			// Use maxBody+1, so we can detect truncation.
-			_, err := io.Copy(lb, io.LimitReader(resp.Body, maxBody+1))
-			if err != nil {
-				log.Error.Printf("error reading meta-data/spot/instance-action response body: %v", err)
-				return
-			}
-			log.Printf("spot instance action: %v", lb.String())
-		}()
-	}
 }
 
 type args map[string]interface{}

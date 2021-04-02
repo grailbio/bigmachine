@@ -386,35 +386,15 @@ func (b *B) pprofIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func shutdownAllMachines(ctx context.Context, duration time.Duration, machines []*Machine) {
-	// Shutdown all of the existing machines.
-	for _, m := range machines {
-		// shutdown is best effort
-		err := m.Call(ctx, "Supervisor.Shutdown",
-			shutdownRequest{
-				Delay:   time.Second,
-				Message: string(logSyncMarker),
-			},
-			nil)
-		if err != nil {
-			log.Error.Printf("failed to invoke Supervisor.Shutdown on %v: %v\n",
-				m.Addr, err)
-		}
-	}
 	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	var wg sync.WaitGroup
 	wg.Add(len(machines))
-	// Wait for the logs to propagate or for a timeout to occur.
 	for _, m := range machines {
-		// Capture variables for closure below.
-		addr, ch := m.Addr, m.tailDone
+		m := m
 		go func() {
-			defer wg.Done()
-			select {
-			case <-ch:
-			case <-ctx.Done():
-				log.Error.Printf("waiting for log to propagate: %v: %v", addr, ctx.Err())
-			}
+			m.Shutdown(ctx)
+			wg.Done()
 		}()
 	}
 	wg.Wait()

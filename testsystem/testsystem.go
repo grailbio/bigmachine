@@ -247,3 +247,5 @@ func (s *System) Read(ctx context.Context, m *bigmachine.Machine, filename strin
 	}
 	return ioutil.NewClosingReader(f), nil
 }
+
+func (s *System) KeepaliveFailed(context.Context, *bigmachine.Machine) {}
