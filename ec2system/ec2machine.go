@@ -36,6 +36,7 @@ import (
 	"io"
 	"io/ioutil"
 	golog "log"
+	mathrand "math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -100,6 +101,12 @@ var (
 	useInstanceIDSuffix = true
 )
 
+var lowSpotBidRate = flag.Float64(
+	"bigmachine-internal-low-spot-bid-rate",
+	0.0,
+	"rate (in range [0,1]) at which low spot instance bids are injected to trigger fulfillment failure (for testing)",
+)
+
 var immortal = flag.Bool("ec2machineimmortal", false, "make immortal EC2 instances (debugging only)")
 
 // SetMortality conrols the mortality of EC2 instances for help with debugging
@@ -146,6 +153,14 @@ const (
 type System struct {
 	// OnDemand determines whether to use on-demand or spot instances.
 	OnDemand bool
+
+	// SpotOnly prevents use of on-demand instances. By default, this system
+	// will try to use spot instances but will launch on-demand instances if
+	// spot instances are not available. If SpotOnly is true, it will never
+	// try to launch on-demand instances. This is implemented as a separate
+	// field from OnDemand to preserve backwards compatibility. This setting
+	// will override OnDemand if both are set.
+	SpotOnly bool
 
 	// InstanceType is the EC2 instance type to launch in this system.
 	// It defaults to m3.medium.
@@ -433,7 +448,6 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			},
 		})
 	}
-	var run func() ([]string, error)
 	securityGroups := []*string{aws.String(s.SecurityGroup)}
 	if len(s.SecurityGroups) > 0 {
 		securityGroups = make([]*string, len(s.SecurityGroups))
@@ -446,49 +460,55 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 	if len(s.EC2KeyName) > 0 {
 		ec2KeyName = aws.String(s.EC2KeyName)
 	}
-
-	if s.OnDemand {
-		run = func() ([]string, error) {
-			resv, err2 := s.ec2.RunInstances(&ec2.RunInstancesInput{
-				SubnetId:              aws.String(s.Subnet),
-				ImageId:               aws.String(s.AMI),
-				MaxCount:              aws.Int64(int64(count)),
-				MinCount:              aws.Int64(int64(1)),
-				BlockDeviceMappings:   blockDevices,
-				DisableApiTermination: aws.Bool(false),
-				DryRun:                aws.Bool(false),
-				EbsOptimized:          aws.Bool(s.config.EBSOptimized),
-				IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
-					Arn: aws.String(s.InstanceProfile),
-				},
-				InstanceInitiatedShutdownBehavior: aws.String("terminate"),
-				InstanceType:                      aws.String(s.config.Name),
-				Monitoring: &ec2.RunInstancesMonitoringEnabled{
-					Enabled: aws.Bool(true), // Required
-				},
-				UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
-				SecurityGroupIds: securityGroups,
-				KeyName:          ec2KeyName,
-			})
-			if err2 != nil {
-				return nil, errors.E("run-instances", err2)
-			}
-			if len(resv.Instances) == 0 {
-				return nil, errors.E(errors.Invalid, "expected at least 1 instance")
-			}
-			ids := make([]string, len(resv.Instances))
-			for i := range ids {
-				ids[i] = *resv.Instances[i].InstanceId
-			}
-			return ids, nil
+	runOnDemand := func(onDemandCount int) ([]string, error) {
+		resv, err2 := s.ec2.RunInstances(&ec2.RunInstancesInput{
+			SubnetId:              aws.String(s.Subnet),
+			ImageId:               aws.String(s.AMI),
+			MaxCount:              aws.Int64(int64(onDemandCount)),
+			MinCount:              aws.Int64(int64(1)),
+			BlockDeviceMappings:   blockDevices,
+			DisableApiTermination: aws.Bool(false),
+			DryRun:                aws.Bool(false),
+			EbsOptimized:          aws.Bool(s.config.EBSOptimized),
+			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
+				Arn: aws.String(s.InstanceProfile),
+			},
+			InstanceInitiatedShutdownBehavior: aws.String("terminate"),
+			InstanceType:                      aws.String(s.config.Name),
+			Monitoring: &ec2.RunInstancesMonitoringEnabled{
+				Enabled: aws.Bool(true), // Required
+			},
+			UserData:         aws.String(base64.StdEncoding.EncodeToString(userData)),
+			SecurityGroupIds: securityGroups,
+			KeyName:          ec2KeyName,
+		})
+		if err2 != nil {
+			return nil, errors.E("run-instances", err2)
 		}
+		if len(resv.Instances) == 0 {
+			return nil, errors.E(errors.Invalid, "expected at least 1 instance")
+		}
+		ids := make([]string, len(resv.Instances))
+		for i := range ids {
+			ids[i] = *resv.Instances[i].InstanceId
+		}
+		return ids, nil
+	}
+	var run func() ([]string, error)
+	if s.OnDemand && !s.SpotOnly {
+		run = func() ([]string, error) { return runOnDemand(count) }
 	} else {
 		// TODO(marius): should we use AvailabilityZoneGroup to ensure that
 		// all instances land in the same AZ?
 		run = func() ([]string, error) {
+			price := s.config.Price[*s.AWSConfig.Region]
+			if mathrand.Float64() < *lowSpotBidRate {
+				log.Printf("injecting low spot bid to trigger fulfillment failure")
+				price = 0.001
+			}
 			resp, err2 := s.ec2.RequestSpotInstancesWithContext(ctx, &ec2.RequestSpotInstancesInput{
 				ValidUntil:    aws.Time(time.Now().Add(time.Minute)),
-				SpotPrice:     aws.String(fmt.Sprintf("%.3f", s.config.Price[*s.AWSConfig.Region])),
+				SpotPrice:     aws.String(fmt.Sprintf("%.3f", price)),
 				InstanceCount: aws.Int64(int64(count)),
 				LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
 					SubnetId:            aws.String(s.Subnet),
@@ -517,23 +537,41 @@ func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, e
 			for i := range describeInput.SpotInstanceRequestIds {
 				describeInput.SpotInstanceRequestIds[i] = resp.SpotInstanceRequests[i].SpotInstanceRequestId
 			}
-			if err2 = s.ec2.WaitUntilSpotInstanceRequestFulfilledWithContext(ctx, describeInput); err2 != nil {
-				return nil, errors.E("wait-until-spot-instance-request-fulfilled", err2)
-			}
+			// Regardless of the result of the call to
+			// WaitUntilSpotInstanceRequestFulfilled, we'll make the call to
+			// DescribeSpotInstanceRequests to extract instance IDs, as some
+			// requests may have succeeded.
+			_ = s.ec2.WaitUntilSpotInstanceRequestFulfilledWithContext(ctx, describeInput)
 			describe, err2 := s.ec2.DescribeSpotInstanceRequestsWithContext(ctx, describeInput)
 			if err2 != nil {
 				return nil, errors.E("describe-spot-instance-requests", err2)
 			}
-			if got, want := n, len(describeInput.SpotInstanceRequestIds); got != want {
-				return nil, fmt.Errorf("ec2.DescribeSpotInstanceRequests: got %d entries, want %d", got, want)
+			var instanceIds []string
+			for _, r := range describe.SpotInstanceRequests {
+				statusCode := aws.StringValue(r.Status.Code)
+				switch statusCode {
+				case "fulfilled", "request-canceled-and-instance-running":
+					instanceIds = append(instanceIds, aws.StringValue(r.InstanceId))
+					s.Event("bigmachine:ec2:spotInstanceRequestFulfill",
+						"requestID", r.SpotInstanceRequestId,
+						"instanceID", r.InstanceId)
+				default:
+					log.Printf("spot instance request %s not fulfilled; status: %s",
+						aws.StringValue(r.SpotInstanceRequestId), statusCode)
+				}
 			}
-			instanceIds := make([]string, n)
-			for i := range instanceIds {
-				r := describe.SpotInstanceRequests[i]
-				instanceIds[i] = aws.StringValue(r.InstanceId)
-				s.Event("bigmachine:ec2:spotInstanceRequestFulfill",
-					"requestID", r.SpotInstanceRequestId,
-					"instanceID", r.InstanceId)
+			if need := count - len(instanceIds); need > 0 && !s.SpotOnly {
+				log.Printf("%d of %d spot requests fulfilled; launching %d on-demand instances",
+					len(instanceIds), count, need)
+				onDemandInstanceIds, errRun := runOnDemand(need)
+				if errRun != nil {
+					log.Printf("error launching on-demand instances: %d", errRun)
+				} else {
+					instanceIds = append(instanceIds, onDemandInstanceIds...)
+				}
+			}
+			if len(instanceIds) == 0 {
+				return nil, errors.E("no instances started")
 			}
 			return instanceIds, nil
 		}

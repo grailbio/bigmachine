@@ -26,7 +26,8 @@ func init() {
 		var system System
 
 		// TODO(marius): maybe defer defaults to system impl?
-		constr.BoolVar(&system.OnDemand, "ondemand", false, "use on-demand instances")
+		constr.BoolVar(&system.OnDemand, "ondemand", false, "use only on-demand instances")
+		constr.BoolVar(&system.SpotOnly, "spot-only", false, "use only spot instances; overrides ondemand")
 		constr.StringVar(&system.InstanceType, "instance", "m3.medium", "instance type to allocate")
 		// Flatcar-stable-2512.2.1-hvm
 		constr.StringVar(&system.AMI, "ami", "ami-0bb54692374ac10a7", "AMI to bootstrap")
