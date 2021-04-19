@@ -54,6 +54,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/grailbio/base/cloud/ec2util"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/eventlog"
 	"github.com/grailbio/base/fatbin"
@@ -1000,9 +1001,8 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 			log.Error.Printf("session.NewSession: %v", err)
 			return err
 		}
-		meta := ec2metadata.New(sess)
 		var doc ec2metadata.EC2InstanceIdentityDocument
-		if doc, err = meta.GetInstanceIdentityDocument(); err != nil {
+		if doc, err = ec2util.GetInstanceIdentityDocument(sess); err != nil {
 			log.Error.Printf("ec2metadata.GetInstanceIdentityDocument: %v", err)
 			return err
 		}
