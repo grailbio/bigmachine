@@ -138,7 +138,11 @@ func (s *System) Exited() bool {
 // System.
 func (s *System) Shutdown() {
 	close(s.done)
-
+	s.mu.Lock()
+	for _, m := range s.machines {
+		m.Kill()
+	}
+	s.mu.Unlock()
 	if t, ok := http.DefaultTransport.(closeIdleTransport); ok {
 		t.CloseIdleConnections()
 	}
