@@ -20,7 +20,6 @@ import (
 
 	"github.com/grailbio/base/config"
 	"github.com/grailbio/base/errors"
-	"github.com/grailbio/base/iofmt"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/bigmachine/internal/authority"
 	bigioutil "github.com/grailbio/bigmachine/internal/ioutil"
@@ -84,14 +83,13 @@ func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) 
 		if err != nil {
 			return nil, err
 		}
-		prefix := fmt.Sprintf("localhost:%d: ", port)
 		cmd := exec.Command(os.Args[0], os.Args[1:]...)
 		cmd.Env = os.Environ()
 		cmd.Env = append(cmd.Env, "BIGMACHINE_MODE=machine")
 		cmd.Env = append(cmd.Env, "BIGMACHINE_SYSTEM=local")
 		muxer := new(tee.Writer)
-		cmd.Stdout = iofmt.PrefixWriter(muxer, prefix)
-		cmd.Stderr = iofmt.PrefixWriter(muxer, prefix)
+		cmd.Stdout = muxer
+		cmd.Stderr = muxer
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_ADDR=localhost:%d", port))
 		cmd.Env = append(cmd.Env, fmt.Sprintf("BIGMACHINE_AUTHORITY=%s", s.authorityFilename))
 
