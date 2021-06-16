@@ -547,12 +547,12 @@ func (m *Machine) loop(ctx context.Context, system System) {
 func (m *Machine) tryMonitorOOMs(ctx context.Context, system System) {
 	var pid int
 	if err := m.retryCall(ctx, 5*time.Minute, 25*time.Second, "Supervisor.Getpid", struct{}{}, &pid); err != nil {
-		log.Error.Printf("%s: could not get pid: %v: cannot monitor for OOMs", m.Addr, err)
+		log.Debug.Printf("%s: could not get pid: %v: cannot monitor for OOMs", m.Addr, err)
 		return
 	}
 	r, err := system.Read(ctx, m, "/dev/kmsg")
 	if err != nil {
-		log.Error.Printf("%s: could not read kernel message buffer: %v: cannot monitor for OOMs", m.Addr, err)
+		log.Debug.Printf("%s: could not read kernel message buffer: %v: cannot monitor for OOMs", m.Addr, err)
 		return
 	}
 	look := fmt.Sprintf("Out of memory: Kill process %d", pid)
