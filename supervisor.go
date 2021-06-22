@@ -366,7 +366,7 @@ func (s *Supervisor) Shutdown(ctx context.Context, req shutdownRequest, _ *struc
 		wg.Done()
 		time.Sleep(req.Delay)
 		log.Print(req.Message)
-		s.system.Exit(1)
+		s.system.Exit(0)
 	}()
 	// Ensure the go routine is scheduled so that the delay is
 	// more accurate than it otherwise would be.

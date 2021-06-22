@@ -118,8 +118,18 @@ func Start(system System, opts ...Option) *B {
 // System returns this B's System implementation.
 func (b *B) System() System { return b.system }
 
-// IsDriver is true if this is a driver instance (rather than a spawned machine).
-func (b *B) IsDriver() bool { return b.driver }
+// IsDriver returns true iff this is the driver process. If driver status
+// cannot be determined, exits.
+func IsDriver() bool {
+	switch mode := os.Getenv("BIGMACHINE_MODE"); mode {
+	case "":
+		return true
+	case "machine":
+	default:
+		log.Fatalf("invalid bigmachine mode %s", mode)
+	}
+	return false
+}
 
 // Run is the entry point for bigmachine. When run is called by the
 // driver process, it returns immediately; it never returns when
@@ -129,14 +139,8 @@ func (b *B) IsDriver() bool { return b.driver }
 // supervisor and RPC server according to the System implementation.
 // Run never returns when called from a machine.
 func (b *B) run() {
-	switch mode := os.Getenv("BIGMACHINE_MODE"); mode {
-	case "":
-		b.driver = true
-	case "machine":
-	default:
-		log.Fatalf("invalid bigmachine mode %s", mode)
-	}
-	if err := b.system.Init(b); err != nil {
+	isDriver := IsDriver()
+	if err := b.system.Init(); err != nil {
 		log.Fatal(err)
 	}
 	var err error
@@ -147,7 +151,7 @@ func (b *B) run() {
 	b.mu.Lock()
 	b.running = true
 	b.mu.Unlock()
-	if b.driver {
+	if isDriver {
 		return
 	}
 	b.server = rpc.NewServer()
@@ -240,7 +244,7 @@ func (r MachineExe) applyParam(m *Machine) {
 //
 // Start returns at least one machine, or else an error.
 func (b *B) Start(ctx context.Context, n int, params ...Param) ([]*Machine, error) {
-	machines, err := b.system.Start(ctx, n)
+	machines, err := b.system.Start(ctx, b, n)
 	if err != nil {
 		return nil, err
 	}

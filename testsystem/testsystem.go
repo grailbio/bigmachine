@@ -58,7 +58,6 @@ type System struct {
 	KeepalivePeriod, KeepaliveTimeout, KeepaliveRpcTimeout time.Duration
 
 	done   chan struct{}
-	b      *bigmachine.B
 	exited bool
 
 	client *http.Client
@@ -78,9 +77,6 @@ func New() *System {
 	s.cond = sync.NewCond(&s.mu)
 	return s
 }
-
-// B returns the bigmachine session associated with this system.
-func (s *System) B() *bigmachine.B { return s.b }
 
 // Wait returns the number of live machines in the test system, blocking until
 // there are at least n.
@@ -106,6 +102,17 @@ func (s *System) Index(i int) *bigmachine.Machine {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.machines[i].Machine
+}
+
+// Machines returns a snapshot of the live machines in the test system.
+func (s *System) Machines() []*bigmachine.Machine {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot := make([]*bigmachine.Machine, len(s.machines))
+	for i, m := range s.machines {
+		snapshot[i] = m.Machine
+	}
+	return snapshot
 }
 
 // Kill kills the machine m that is under management of this system,
@@ -156,9 +163,7 @@ func (s *System) Name() string {
 	return "testsystem"
 }
 
-// Init initializes the System.
-func (s *System) Init(b *bigmachine.B) error {
-	s.b = b
+func (*System) Init() error {
 	return nil
 }
 
@@ -189,13 +194,15 @@ func (s *System) ListenAndServe(addr string, handler http.Handler) error {
 // behavior of a supervisor of a test machine and a regular machine
 // is that the test machine supervisor does not exec the process, as
 // this would break testing.
-func (s *System) Start(_ context.Context, count int) ([]*bigmachine.Machine, error) {
+func (s *System) Start(
+	_ context.Context, b *bigmachine.B, count int,
+) ([]*bigmachine.Machine, error) {
 	s.mu.Lock()
 	machines := make([]*bigmachine.Machine, count)
 	for i := range machines {
 		ctx, cancel := context.WithCancel(context.Background())
 		server := rpc.NewServer()
-		supervisor := bigmachine.StartSupervisor(ctx, s.b, s, server)
+		supervisor := bigmachine.StartSupervisor(ctx, b, s, server)
 		if err := server.Register("Supervisor", supervisor); err != nil {
 			// Something is broken if we can't register the supervisor in the
 			// testsystem.

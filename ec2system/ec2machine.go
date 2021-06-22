@@ -154,93 +154,78 @@ const (
 type System struct {
 	// OnDemand determines whether to use on-demand or spot instances.
 	OnDemand bool
-
 	// SpotOnly prevents use of on-demand instances. By default, this system
 	// will try to use spot instances but will launch on-demand instances if
-	// spot instances are not available. If SpotOnly is true, it will never
-	// try to launch on-demand instances. This is implemented as a separate
-	// field from OnDemand to preserve backwards compatibility. This setting
-	// will override OnDemand if both are set.
+	// spot instances are not available. If SpotOnly is true, it will never try
+	// to launch on-demand instances. This is implemented as a separate field
+	// from OnDemand to preserve backwards compatibility. This setting will
+	// override OnDemand if both are set.
 	SpotOnly bool
-
-	// InstanceType is the EC2 instance type to launch in this system.
-	// It defaults to m3.medium.
+	// InstanceType is the EC2 instance type to launch in this system.  It
+	// defaults to m3.medium.
 	InstanceType string
-
-	// AMI is the AMI used to boot instances with. The AMI must support
-	// cloud config and use systemd. The default AMI is a recent stable Flatcar
+	// AMI is the AMI used to boot instances with. The AMI must support cloud
+	// config and use systemd. The default AMI is a recent stable Flatcar
 	// build.
 	AMI string
-
 	// Flavor is the operating system flavor of the AMI.
 	Flavor Flavor
-
 	// AWSConfig is used to launch the system's instances.
 	AWSConfig *aws.Config
-
-	// DefaultRegion is the preferred default region for this system
-	// instance to use if one is not specified in AWSConfig. It this is
-	// not set the default region will continue to be us-west-2.
+	// DefaultRegion is the preferred default region for this system instance
+	// to use if one is not specified in AWSConfig. It this is not set the
+	// default region will continue to be us-west-2.
 	DefaultRegion string
-
-	// InstanceProfile is the instance profile with which to launch the instance.
-	// This should be set if the instances need AWS credentials.
+	// InstanceProfile is the instance profile with which to launch the
+	// instance. This should be set if the instances need AWS credentials.
 	InstanceProfile string
-
 	// SecurityGroup is the security group into which instances are launched.
 	SecurityGroup string
-
 	// SecurityGroups are the security group into which instances are launched.
 	// If set, it used in preference to SecurityGroup above.
 	SecurityGroups []string
-
 	// Subnet is the subnet into which instances are launched.
 	Subnet string
-
-	// Diskspace is the amount of disk space in GiB allocated
-	// to the instance's root EBS volume. Its default is 200.
+	// Diskspace is the amount of disk space in GiB allocated to the instance's
+	// root EBS volume. Its default is 200.
 	Diskspace uint
-
-	// Dataspace is the amount of data disk space allocated
-	// in /mnt/data. It defaults to 0. Data are striped across
-	// multiple gp2 EBS slices in order to improve throughput.
+	// Dataspace is the amount of data disk space allocated in /mnt/data. It
+	// defaults to 0. Data are striped across multiple gp2 EBS slices in order
+	// to improve throughput.
 	Dataspace uint
-
-	// Binary is the URL to a bootstrap binary to be used when launching
-	// system instances. It should be a minimal bigmachine build that
-	// contains the ec2machine implementation and runs bigmachine's
-	// supervisor service. If the value of Binary is empty, then the
-	// default ec2boot binary is used.
+	// Binary is the URL to a bootstrap binary to be used when launching system
+	// instances. It should be a minimal bigmachine build that contains the
+	// ec2machine implementation and runs bigmachine's supervisor service. If
+	// the value of Binary is empty, then the default ec2boot binary is used.
 	//
-	// The binary is fetched by a vanilla curl(1) invocation, and thus needs
-	// to be publicly available.
+	// The binary is fetched by a vanilla curl(1) invocation, and thus needs to
+	// be publicly available.
 	Binary string
-
-	// SshKeys is the list of sshkeys that installed as authorized keys
-	// in the instance. On system initialization, SshKeys is amended
-	// with the contents of $HOME/.ssh/id_rsa.pub, if it exists, and the
-	// keys available in the SSH agent reachable by $SSH_AUTH_SOCK, if
-	// one exists.
+	// SshKeys is the list of sshkeys that installed as authorized keys in the
+	// instance. On system initialization, SshKeys is amended with the contents
+	// of $HOME/.ssh/id_rsa.pub, if it exists, and the keys available in the
+	// SSH agent reachable by $SSH_AUTH_SOCK, if one exists.
 	SshKeys []string
-
-	// The EC2 key pair name to associate with the created instances when
-	// the instance this launched. This key name will appear in the EC2
-	// instance's metadata.
+	// The EC2 key pair name to associate with the created instances when the
+	// instance this launched. This key name will appear in the EC2 instance's
+	// metadata.
 	EC2KeyName string
-
 	// The user running the application. For tagging.
 	Username string
-
 	// AdditionalFiles are added to the worker cloud-init configuration.
 	AdditionalFiles []CloudFile
 	// AdditionalUnits are added to the worker cloud-init configuration.
 	AdditionalUnits []CloudUnit
-
 	// AdditionalEC2Tags will be applied to this system's instances.
 	AdditionalEC2Tags []*ec2.Tag
-
 	// Eventer is used to log semi-structured events in service of analytics.
 	Eventer eventlog.Eventer
+
+	// initOnce is used to guarantee one-time (lazy) initialization of this
+	// system.
+	initOnce sync.Once
+	// initErr holds any error from initialization.
+	initErr error
 
 	privateKey *rsa.PrivateKey
 
@@ -261,16 +246,23 @@ type System struct {
 // Name returns the name of this system ("ec2").
 func (s *System) Name() string { return "ec2" }
 
-// Init initializes the system. Before validating the system
-// configuration and providing defaults, Init checks that the
-// architecture and OS reported by Go's runtime is amd64 and linux
-// respectively. Currently these are the only supported architectures
-// from which to launch ec2machine systems.
+// Init initializes the system. Before validating the system configuration and
+// providing defaults, Init checks that the architecture and OS reported by
+// Go's runtime is amd64 and linux respectively. Currently these are the only
+// supported architectures from which to launch ec2machine systems.
 //
-// Init also establishes the AWS API session with which it
-// communicates to the EC2 API. It uses the default session
-// constructor furnished by the AWS SDK.
-func (s *System) Init(b *bigmachine.B) error {
+// Init also establishes the AWS API session with which it communicates to the
+// EC2 API. It uses the default session constructor furnished by the AWS SDK.
+//
+// Once Init is called, do not modify any fields of s.
+func (s *System) Init() error {
+	s.initOnce.Do(func() {
+		s.initErr = s.init()
+	})
+	return s.initErr
+}
+
+func (s *System) init() error {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		self, err := fatbin.Self()
 		if err != nil {
@@ -344,7 +336,7 @@ func (s *System) Init(b *bigmachine.B) error {
 		userSshKeys = append(userSshKeys, string(sshKey))
 	}
 	userSshKeys = append(userSshKeys, readSshAgentKeys()...)
-	if b.IsDriver() && len(userSshKeys) == 0 {
+	if bigmachine.IsDriver() && len(userSshKeys) == 0 {
 		log.Printf("failed to read ssh key from %s: %v or from ssh agent; the user will not be able to ssh into the system", sshkeyPath, err)
 	}
 	s.SshKeys = append(s.SshKeys, userSshKeys...)
@@ -359,7 +351,7 @@ func (s *System) Init(b *bigmachine.B) error {
 		return err
 	}
 	s.monitor = monitor.Start(s.ec2, limiter)
-	return err
+	return nil
 }
 
 func readSshAgentKeys() []string {
@@ -391,7 +383,9 @@ func readSshAgentKeys() []string {
 // type. After the instance is launched, Start asynchronously tags it
 // with the bigmachine command line and binary, as well as other
 // runtime information.
-func (s *System) Start(ctx context.Context, count int) ([]*bigmachine.Machine, error) {
+func (s *System) Start(
+	ctx context.Context, _ *bigmachine.B, count int,
+) ([]*bigmachine.Machine, error) {
 	userData, err := s.cloudConfig().Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cloud-config: %v", err)

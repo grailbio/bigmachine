@@ -21,17 +21,16 @@ import (
 // HTTP client that can be used to communicate between machines
 // and drivers.
 type System interface {
-	// Name is the name of this system. It is used to multiplex multiple
-	// system implementations, and thus should be unique among
-	// systems.
+	// Name is the name of this system. It is used to multiplex multiple system
+	// implementations, and thus should be unique among systems.
 	Name() string
-	// Init is called when the bigmachine starts up in order to
-	// initialize the system implementation. If an error is returned,
-	// the Bigmachine fails.
-	Init(*B) error
-	// Main is called to start  a machine. The system is expected to
-	// take over the process; the bigmachine fails if main returns (and
-	// if it does, it should always return with an error).
+	// Init initializes this system for use by a bigmachine.B. For convenience,
+	// it is called by bigmachine.Start, so implementations must be idempotent
+	// and return nil in subsequent calls if the first call returned nil.
+	Init() error
+	// Main is called to start a machine. The system is expected to take over
+	// the process; the bigmachine fails if main returns (and if it does, it
+	// should always return with an error).
 	Main() error
 	// Event logs an event of typ with (key, value) fields given in fieldPairs
 	// as k0, v0, k1, v1, ...kn, vn. For example:
@@ -47,9 +46,9 @@ type System interface {
 	// is reachable from other instances in the bigmachine cluster. If addr
 	// is the empty string, the default cluster address is used.
 	ListenAndServe(addr string, handle http.Handler) error
-	// Start launches up to n new machines.  The returned machines can
-	// be in Unstarted state, but should eventually become available.
-	Start(ctx context.Context, n int) ([]*Machine, error)
+	// Start launches up to n new machines. The returned machines can be in
+	// Unstarted state, but should eventually become available.
+	Start(ctx context.Context, b *B, n int) ([]*Machine, error)
 	// Exit is called to terminate a machine with the provided exit code.
 	Exit(int)
 	// Shutdown is called on graceful driver exit. It's should be used to
@@ -103,5 +102,6 @@ func Init() {
 	}
 	system, ok := systems[name]
 	must.True(ok, "system ", name, " not found")
+	must.Nil(system.Init(), "system initialization error")
 	must.Never("start returned: ", Start(system))
 }

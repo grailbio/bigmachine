@@ -42,14 +42,21 @@ func init() {
 
 const maxConcurrentStreams = 20000
 
-// Local is a System that insantiates machines by
+// Local is a System that instantiates machines by
 // creating new processes on the local machine.
 var Local System = new(localSystem)
 
 // LocalSystem implements a System that instantiates machines
 // by creating processes on the local machine.
 type localSystem struct {
-	Gobable           struct{} // to make the struct gob-encodable
+	Gobable struct{} // to make the struct gob-encodable
+
+	// initOnce is used to guarantee one-time (lazy) initialization of this
+	// system.
+	initOnce sync.Once
+	// initErr holds any error from initialization.
+	initErr error
+
 	authorityFilename string
 	authority         *authority.T
 
@@ -57,26 +64,33 @@ type localSystem struct {
 	muxers map[*Machine]*tee.Writer
 }
 
-func (s *localSystem) Init(_ *B) error {
-	f, err := ioutil.TempFile("", "")
-	if err != nil {
-		return err
-	}
-	s.authorityFilename = f.Name()
-	_ = f.Close()
-	if err = os.Remove(s.authorityFilename); err != nil {
-		return err
-	}
-	s.authority, err = authority.New(s.authorityFilename)
-	s.muxers = make(map[*Machine]*tee.Writer)
-	return err
-}
-
 func (*localSystem) Name() string {
 	return "local"
 }
 
-func (s *localSystem) Start(ctx context.Context, count int) ([]*Machine, error) {
+func (s *localSystem) Init() error {
+	s.initOnce.Do(func() {
+		f, err := ioutil.TempFile("", "")
+		if err != nil {
+			s.initErr = err
+			return
+		}
+		s.authorityFilename = f.Name()
+		_ = f.Close()
+		if err = os.Remove(s.authorityFilename); err != nil {
+			s.initErr = err
+			return
+		}
+		if s.authority, err = authority.New(s.authorityFilename); err != nil {
+			s.initErr = err
+			return
+		}
+		s.muxers = make(map[*Machine]*tee.Writer)
+	})
+	return s.initErr
+}
+
+func (s *localSystem) Start(ctx context.Context, _ *B, count int) ([]*Machine, error) {
 	machines := make([]*Machine, count)
 	for i := range machines {
 		port, err := getFreeTCPPort()
