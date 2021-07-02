@@ -1094,10 +1094,7 @@ func (s *System) run(ctx context.Context, addr string, command string) io.Reader
 				err = errRetry
 				break
 			}
-			log.Debug.Printf("tail %v: %v; retrying", addr, err)
-		}
-		if err != nil {
-			log.Error.Printf("tail %v: %v", addr, err)
+			log.Debug.Printf("%v: running %q: %v; retrying", addr, command, err)
 		}
 		w.CloseWithError(err)
 	}()
