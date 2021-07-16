@@ -235,6 +235,20 @@ func (r MachineExe) applyParam(m *Machine) {
 	m.exe = r
 }
 
+// MachineArgs is a Param that overrides the default arguments passed to the
+// machine process. The default arguments, used if MachineArgs are unset or
+// empty overall, are os.Args. If multiple MachineArgs are given, they are
+// concatenated in order. Similar to os.Args, the first overall MachineArgs
+// argument should represent the machine executable, so to override with no
+// arguments:
+//
+//  b.Start(ctx, 1, MachineArgs{os.Args[0]})
+type MachineArgs []string
+
+func (a MachineArgs) applyParam(m *Machine) {
+	m.args = append(m.args, a...)
+}
+
 // Start launches up to n new machines and returns them. The machines are
 // configured according to the provided parameters. Each machine must
 // have at least one service exported, or else Start returns an

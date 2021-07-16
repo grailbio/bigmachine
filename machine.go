@@ -145,6 +145,10 @@ type Machine struct {
 	// If nil, use defaultMachineExe.
 	exe MachineExe
 
+	// args is the slice of arguments passed to the machine executable, exe. If
+	// empty, the driver arguments are used.
+	args []string
+
 	owner bool
 
 	client *rpc.Client
@@ -272,6 +276,9 @@ func (m *Machine) Err() error {
 func (m *Machine) start(b *B) {
 	if m.exe == nil {
 		m.exe = defaultMachineExe
+	}
+	if len(m.args) == 0 {
+		m.args = os.Args
 	}
 	if m.client == nil {
 		m.client = b.client
@@ -633,7 +640,7 @@ func (m *Machine) exec(ctx context.Context) error {
 	if err = m.timeoutCall(ctx, timeout, "Supervisor.Setenv", m.environ, nil); err != nil {
 		return err
 	}
-	if err = m.timeoutCall(ctx, timeout, "Supervisor.Setargs", os.Args, nil); err != nil {
+	if err = m.timeoutCall(ctx, timeout, "Supervisor.Setargs", m.args, nil); err != nil {
 		return err
 	}
 	const floor = 100 << 10 // bps
