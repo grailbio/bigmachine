@@ -139,12 +139,11 @@ log.Print("all machines are ready")
 
 Machines are started with [`(*B).Start`](https://godoc.org/github.com/grailbio/bigmachine#B.Start),
 to which we provide the set of services that should be installed on each machine.
-(The service object is provided is serialized and initialized on the remote machine,
+(The service object provided is serialized and initialized on the remote machine,
 so it may include any desired parameters.)
-Start returns with with a slice of
+Start returns a slice of
 [`Machine`](https://godoc.org/github.com/grailbio/bigmachine#Machine)
-instances,
-representing each machine that was launched.
+instances representing each machine that was launched.
 Machines can be in a number of
 [states](https://godoc.org/github.com/grailbio/bigmachine#State).
 In this case,

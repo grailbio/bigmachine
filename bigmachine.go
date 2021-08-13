@@ -35,8 +35,7 @@ const RpcPrefix = "/bigrpc/"
 // logSyncMarker is used as a sync marker in the bigmachine tailed logs.
 var logSyncMarker = []byte(`========\/\/ Bigmachine Done \/\/========`)
 
-// B is a bigmachine instance. Bs are created by Start and, outside
-// of testing situations, there is exactly one per process.
+// B is a bigmachine instance. Bs are created by Start.
 type B struct {
 	system System
 	// index is a process-unique identifier for this B. It is useful for
