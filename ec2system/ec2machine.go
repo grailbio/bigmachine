@@ -598,41 +598,17 @@ func (s *System) Start(
 	if err != nil {
 		return nil, err
 	}
-	instanceIdsp := make([]*string, len(instanceIds))
-	for i := range instanceIdsp {
-		instanceIdsp[i] = aws.String(instanceIds[i])
-	}
-
-	// Asynhronously tag the instance so we don't hold up the process.
+	// Asynchronously tag the instance so we don't hold up the process.
 	go func() {
-		// TODO(marius): there should be some abstraction that provides the name,
-		// so that it can be overriden, etc. Also, having a user would be nice here.
-		var (
-			info   = bigmachine.LocalInfo()
-			binary = filepath.Base(os.Args[0])
-			tag    = fmt.Sprintf("%s:%s(%s) %s (bigmachine)", s.Username, binary, info.Digest.Short(), strings.Join(os.Args[1:], " "))
-		)
-		if len(tag) > 250 { // EC2 tags are limited to 255 characters.
-			tag = tag[:250] + "..."
-		}
-		_, err2 := s.ec2.CreateTags(&ec2.CreateTagsInput{
-			Resources: instanceIdsp,
-			Tags: append([]*ec2.Tag{
-				{Key: aws.String("Name"), Value: aws.String(tag)},
-				{Key: aws.String("GOARCH"), Value: aws.String(info.Goarch)},
-				{Key: aws.String("GOOS"), Value: aws.String(info.Goos)},
-				{Key: aws.String("Digest"), Value: aws.String(info.Digest.String())},
-				{Key: aws.String("bigmachine"), Value: aws.String("true")},
-				{Key: aws.String("bigmachine:binary"), Value: aws.String(binary)},
-			}, s.AdditionalEC2Tags...),
-		})
-		if err2 != nil {
-			log.Error.Printf("ec2.CreateTags: %v", err2)
+		tagCtx, tagCancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer tagCancel()
+		if tagErr := s.tag(tagCtx, instanceIds); tagErr != nil {
+			log.Error.Printf("ec2machine: tagging instances: %v", tagErr)
 		}
 	}()
 	// TODO(marius): custom WaitUntilInstanceRunningWithContext that's more aggressive
 	describeInput := &ec2.DescribeInstancesInput{
-		InstanceIds: instanceIdsp,
+		InstanceIds: aws.StringSlice(instanceIds),
 	}
 	if err = s.ec2.WaitUntilInstanceRunningWithContext(ctx, describeInput); err != nil {
 		log.Error.Printf("WaitUntilInstanceRunning: %v", err)
@@ -674,6 +650,42 @@ func (s *System) Start(
 		s.monitor.Started(aws.StringValue(instance.InstanceId), machines[i])
 	}
 	return machines, nil
+}
+
+func (s *System) tag(ctx context.Context, instanceIds []string) error {
+	var (
+		info   = bigmachine.LocalInfo()
+		binary = filepath.Base(os.Args[0])
+		tag    = fmt.Sprintf(
+			"%s:%s(%s) %s (bigmachine)",
+			s.Username, binary, info.Digest.Short(), strings.Join(os.Args[1:], " "),
+		)
+	)
+	if len(tag) > 250 { // EC2 tags are limited to 255 characters.
+		tag = tag[:250] + "..."
+	}
+	if err := s.ec2.WaitUntilInstanceExistsWithContext(ctx,
+		&ec2.DescribeInstancesInput{
+			InstanceIds: aws.StringSlice(instanceIds),
+		},
+	); err != nil {
+		return errors.E(err, "wait-until-instance-exists")
+	}
+	_, err := s.ec2.CreateTags(&ec2.CreateTagsInput{
+		Resources: aws.StringSlice(instanceIds),
+		Tags: append([]*ec2.Tag{
+			{Key: aws.String("Name"), Value: aws.String(tag)},
+			{Key: aws.String("GOARCH"), Value: aws.String(info.Goarch)},
+			{Key: aws.String("GOOS"), Value: aws.String(info.Goos)},
+			{Key: aws.String("Digest"), Value: aws.String(info.Digest.String())},
+			{Key: aws.String("bigmachine"), Value: aws.String("true")},
+			{Key: aws.String("bigmachine:binary"), Value: aws.String(binary)},
+		}, s.AdditionalEC2Tags...),
+	})
+	if err != nil {
+		return errors.E(err, "create-tags")
+	}
+	return nil
 }
 
 func getAddress(instance *ec2.Instance) string {
