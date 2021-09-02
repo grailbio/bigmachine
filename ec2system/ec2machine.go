@@ -612,14 +612,13 @@ func (s *System) Start(
 	}
 	if err = s.ec2.WaitUntilInstanceRunningWithContext(ctx, describeInput); err != nil {
 		log.Error.Printf("WaitUntilInstanceRunning: %v", err)
-		var describeInstance *ec2.DescribeInstancesOutput
-		describeInstance, err = s.ec2.DescribeInstancesWithContext(ctx, describeInput)
-		if err != nil {
-			return nil, err
+		describeInstance, errDescribe := s.ec2.DescribeInstancesWithContext(ctx, describeInput)
+		if errDescribe != nil {
+			return nil, errDescribe
 		}
 		for _, reserv := range describeInstance.Reservations {
 			for _, inst := range reserv.Instances {
-				log.Printf("instance %s: %s", aws.StringValue(inst.InstanceId), inst.State)
+				log.Error.Printf("instance %s: %s", aws.StringValue(inst.InstanceId), inst.State)
 			}
 		}
 		return nil, err
