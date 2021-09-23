@@ -835,6 +835,8 @@ func (s *System) cloudConfig() *cloudConfig {
 		Content: tmpl(`
 			fs.file-max = {{.filemax}}
 			fs.nr_open = {{.nropen}}
+			# Allow reading of /dev/kmsg for OOM detection.
+			kernel.dmesg_restrict = 0
 		`, args{"filemax": filemax, "nropen": nropen}),
 	})
 
