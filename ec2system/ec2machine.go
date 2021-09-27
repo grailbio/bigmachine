@@ -13,7 +13,7 @@
 // ec2instances tool to construct appropriate spot bid prices, and to
 // configure instances according to their underlying characteristics.
 // Ec2machine does not currently set up local storage beyond the boot
-// gp2 EBS volume. (Its size may be configured.)
+// gp3 EBS volume. (Its size may be configured.)
 //
 // Secure communications is set up through an ephemeral CA stored at
 // /tmp/bigmachine.pem.
@@ -75,9 +75,9 @@ const (
 	maxConcurrentStreams = 20000
 	authorityPath        = "/tmp/bigmachine.pem"
 
-	// 334GiB is the smallest gp2 disk size that yields maximum throughput, as per
-	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSVolumeTypes.html
-	minDataVolumeSliceSize = 335
+	// minDataVolumeSliceSize is the minimum size of each EBS volume to use for
+	// dataspace in GiB.
+	minDataVolumeSliceSize = 16
 
 	// The maximum number of EBS volumes an instance can have.
 	// This is really ~40, but we're going to keep it to a-z to maintain
@@ -190,7 +190,7 @@ type System struct {
 	// root EBS volume. Its default is 200.
 	Diskspace uint
 	// Dataspace is the amount of data disk space allocated in /mnt/data. It
-	// defaults to 0. Data are striped across multiple gp2 EBS slices in order
+	// defaults to 0. Data are striped across multiple gp3 EBS slices in order
 	// to improve throughput.
 	Dataspace uint
 	// Binary is the URL to a bootstrap binary to be used when launching system
@@ -424,7 +424,7 @@ func (s *System) Start(
 			Ebs: &ec2.EbsBlockDevice{
 				DeleteOnTermination: aws.Bool(true),
 				VolumeSize:          aws.Int64(int64(50 + s.Diskspace)),
-				VolumeType:          aws.String("gp2"),
+				VolumeType:          aws.String("gp3"),
 			},
 		},
 	}
@@ -439,7 +439,7 @@ func (s *System) Start(
 			Ebs: &ec2.EbsBlockDevice{
 				DeleteOnTermination: aws.Bool(true),
 				VolumeSize:          aws.Int64(sliceSize),
-				VolumeType:          aws.String("gp2"),
+				VolumeType:          aws.String("gp3"),
 			},
 		})
 	}
