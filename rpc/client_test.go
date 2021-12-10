@@ -6,6 +6,7 @@ package rpc
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -53,6 +54,22 @@ func TestEncodeError(t *testing.T) {
 	}
 	// teapot will cause an encoding error because it has no exported fields.
 	err := client.Call(context.Background(), url, "Test.Echo", teapot{}, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Match(fatalErr, err) {
+		t.Errorf("error %v is not fatal", err)
+	}
+}
+
+// TestReaderFuncArgError verifies that a (func() (io.Reader, error)) arg
+// passed to Call that returns an error causes the appropriate error handling.
+func TestReaderFuncArgError(t *testing.T) {
+	url, client := newTestClient(t)
+	makeReader := func() (io.Reader, error) {
+		return nil, errors.E(errors.Fatal, "test error")
+	}
+	err := client.Call(context.Background(), url, "Test.Echo", makeReader, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
