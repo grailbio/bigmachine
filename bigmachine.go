@@ -53,6 +53,11 @@ type B struct {
 	machines map[string]*Machine
 	driver   bool
 	running  bool
+
+	// consecutiveBootFailures holds the number of consecutive failures to boot
+	// a machine. We use this to enable extra logging to diagnose systematic
+	// boot problems. Access it with atomic functions.
+	consecutiveBootFailures uint32
 }
 
 // Option is an option that can be provided when starting a new B. It is a
@@ -275,6 +280,7 @@ func (b *B) Start(ctx context.Context, n int, params ...Param) ([]*Machine, erro
 		}
 		m.owner = true
 		m.tailDone = make(chan struct{})
+		m.consecutiveBootFailures = &b.consecutiveBootFailures
 		b.machines[m.Addr] = m
 		m.start(b)
 		m := m

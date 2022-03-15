@@ -173,6 +173,11 @@ type Machine struct {
 
 	// used to wait for the output from the worker to be completed.
 	tailDone chan struct{}
+
+	// consecutiveBootFailures holds the number of consecutive failures to boot
+	// a machine. We use this to enable extra logging to diagnose systematic
+	// boot problems. Access it with atomic functions.
+	consecutiveBootFailures *uint32
 }
 
 // Owned tells whether this machine was created and is managed
@@ -399,6 +404,15 @@ func (m *Machine) loop(ctx context.Context, system System) {
 				if log.At(log.Debug) {
 					atomic.StoreUint32(&tailPrint, 1)
 				}
+				consecutiveBootFailures := m.loadConsecutiveBootFailures()
+				if consecutiveBootFailures >= 5 {
+					log.Printf(
+						"%d consecutive boot failures; enabling boot logging for %s",
+						consecutiveBootFailures,
+						m.Addr,
+					)
+					atomic.StoreUint32(&tailPrint, 1)
+				}
 				w := iofmt.PrefixWriter(os.Stderr, m.Addr+": ")
 				// Scan the log output for the sync marker or an error.
 				sc := bufio.NewScanner(r)
@@ -444,9 +458,16 @@ func (m *Machine) loop(ctx context.Context, system System) {
 	}
 
 	if err := m.ping(ctx); err != nil {
+		if m.owner {
+			m.markBootFailure()
+		}
 		m.setError(err)
 		return
 	}
+
+	// We have successfully booted a machine, i.e. are able to ping it, so
+	// reset the counter of consecutive start failures.
+	m.clearConsecutiveBootFailures()
 
 	if !m.owner {
 		// If we're not the owner, we maintain machine state
@@ -834,6 +855,27 @@ func (m *Machine) saveExpvars(ctx context.Context, path string) error {
 	}
 	defer f.Close()
 	return json.NewEncoder(f).Encode(vars)
+}
+
+func (m *Machine) markBootFailure() {
+	if m.consecutiveBootFailures == nil {
+		return
+	}
+	atomic.AddUint32(m.consecutiveBootFailures, 1)
+}
+
+func (m *Machine) loadConsecutiveBootFailures() uint32 {
+	if m.consecutiveBootFailures == nil {
+		return 0
+	}
+	return atomic.LoadUint32(m.consecutiveBootFailures)
+}
+
+func (m *Machine) clearConsecutiveBootFailures() {
+	if m.consecutiveBootFailures == nil {
+		return
+	}
+	atomic.StoreUint32(m.consecutiveBootFailures, 0)
 }
 
 func truncatef(v interface{}) string {
