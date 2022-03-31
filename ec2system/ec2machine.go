@@ -560,7 +560,7 @@ func (s *System) Start(
 					len(instanceIds), count, need)
 				onDemandInstanceIds, errRun := runOnDemand(need)
 				if errRun != nil {
-					log.Printf("error launching on-demand instances: %d", errRun)
+					log.Printf("error launching on-demand instances: %v", errRun)
 				} else {
 					instanceIds = append(instanceIds, onDemandInstanceIds...)
 				}
