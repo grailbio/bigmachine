@@ -3,7 +3,7 @@ module github.com/grailbio/bigmachine
 go 1.12
 
 require (
-	github.com/aws/aws-sdk-go v1.29.24
+	github.com/aws/aws-sdk-go v1.33.0
 	github.com/google/pprof v0.0.0-20190930153522-6ce02741cba3
 	github.com/grailbio/base v0.0.9
 	github.com/grailbio/testutil v0.0.3
