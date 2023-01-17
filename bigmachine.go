@@ -119,6 +119,9 @@ func Start(system System, opts ...Option) *B {
 	return b
 }
 
+// Name returns the Name Option provided at Start, else empty string.
+func (b *B) Name() string { return b.name }
+
 // System returns this B's System implementation.
 func (b *B) System() System { return b.system }
 
