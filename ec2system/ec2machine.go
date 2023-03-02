@@ -819,10 +819,12 @@ func (s *System) cloudConfig() *cloudConfig {
 	// bootmachine program terminates for any reason. This is the
 	// mechanism of (automatic) instance termination.
 	//
-	// If we have a data disk, set TMPDIR to it.
-	var environ string
+	// Set XDG_CACHE_HOME, so things like os.UserCacheDir can be used.
+	//
+	// If we have a data disk, set TMPDIR and XDG_CACHE_HOME to use it.
+	environ := "Environment=XDG_CACHE_HOME=/tmp/cache"
 	if dataDeviceName != "" {
-		environ = "Environment=TMPDIR=/mnt/data"
+		environ = "Environment=TMPDIR=/mnt/data XDG_CACHE_HOME=/mnt/data/cache"
 	}
 	// Increase the open-file limit. The reduce shuffle opens many
 	// filedescriptors.
