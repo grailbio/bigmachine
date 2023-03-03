@@ -22,7 +22,7 @@ const (
 )
 
 func init() {
-	config.Register("bigmachine/ec2system", func(constr *config.Constructor) {
+	config.Register("bigmachine/ec2system", func(constr *config.ConstructorGen[*System]) {
 		var system System
 
 		// TODO(marius): maybe defer defaults to system impl?
@@ -49,7 +49,7 @@ func init() {
 		var sess *session.Session
 		constr.InstanceVar(&sess, "aws", "aws", "AWS configuration for all EC2 calls")
 		constr.Doc = "bigmachine/ec2system configures the default instances settings used for bigmachine's ec2 backend"
-		constr.New = func() (interface{}, error) {
+		constr.New = func() (*System, error) {
 			switch {
 			case *flavor == "flatcar":
 				system.Flavor = Flatcar
