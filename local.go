@@ -28,7 +28,7 @@ import (
 )
 
 func init() {
-	config.Register("bigmachine/local", func(constr *config.ConstructorGen[System]) {
+	config.Register("bigmachine/local", func(constr *config.Constructor[System]) {
 		constr.Doc = "bigmachine/local is the bigmachine instance used for local process-based clusters"
 		constr.New = func() (System, error) {
 			return Local, nil

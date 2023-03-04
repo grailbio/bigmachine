@@ -22,7 +22,7 @@ const (
 )
 
 func init() {
-	config.Register("bigmachine/ec2system", func(constr *config.ConstructorGen[*System]) {
+	config.Register("bigmachine/ec2system", func(constr *config.Constructor[*System]) {
 		var system System
 
 		// TODO(marius): maybe defer defaults to system impl?
