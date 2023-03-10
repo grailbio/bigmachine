@@ -50,10 +50,10 @@ func init() {
 		constr.InstanceVar(&sess, "aws", "aws", "AWS configuration for all EC2 calls")
 		constr.Doc = "bigmachine/ec2system configures the default instances settings used for bigmachine's ec2 backend"
 		constr.New = func() (*System, error) {
-			switch {
-			case *flavor == "flatcar":
+			switch *flavor {
+			case "flatcar":
 				system.Flavor = Flatcar
-			case *flavor == "ubuntu":
+			case "ubuntu":
 				system.Flavor = Ubuntu
 			default:
 				return nil, errors.E(errors.Invalid, "flavor must be one of {flatcar, ubuntu}: ", *flavor)
